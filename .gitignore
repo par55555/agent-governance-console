@@ -2,3 +2,8 @@ tests/out/
 __pycache__/
 .DS_Store
 node_modules/
+
+# reference media (not part of the app)
+IMG_4609.mov
+*.mov
+*.mp4

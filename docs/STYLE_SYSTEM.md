@@ -42,6 +42,7 @@ Rules:
   (writes into another process, degraded). Attention uses always pair with a
   pencil or warning icon and words, which is what tells them apart.
 - Status color is never the only signal: pair it with an icon or text label.
+- Home stage exception (2026-11-21): the One view on the home page is the focal piece and may use a navy radial gradient stage (`--navy-deep` #0D1628 to `--navy-lift` #2E4676), gradient zone faces, drop shadows, a faint floor grid and a 3D tilt. Scoped to `.home-head.stage`; nowhere else.
 - One exception to "no gradients": an alpha mask (not a color) fades the right
   edge of the steps row when it overflows and scrolls at narrow widths.
 - Tints allowed: --navy-8 for hover/selected, --orange-8 (#FDF1E5) behind

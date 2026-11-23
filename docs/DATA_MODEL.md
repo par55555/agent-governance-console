@@ -80,3 +80,16 @@ Written by telemetry ingestion in production. Only production agents have one; a
 - Cross-process footprint (`footprint()`): every process named by an input, tool, output or user group; a write anywhere in it marks the process as written into
 
 Users are summed per agent. A person who uses two agents counts twice until identities are joined across agents (on the to-do list).
+
+
+## Optional data classification on inputs and outputs (2026-11-23)
+
+Each `inputs[]` and `outputs[]` row may carry three optional fields. The process page's Data view shows them; when they are missing it infers them from the system and dataset name and marks the value "(inferred)".
+
+| field | values | example |
+|---|---|---|
+| `data_type` | Master data, Transactions, Financial postings, Analytics, Events, Documents, Knowledge, Communications, Contracts, Reference, Model output | `"Transactions"` |
+| `structure` | Structured, Semi-structured, Unstructured | `"Semi-structured"` |
+| `format` | free text | `"EDI X12 850"`, `"PDF"`, `"Columnar tables"` |
+
+The dataset name is the part of `system` / `destination` after " · " (for example "SAP S/4HANA · Billing documents" is the dataset "Billing documents" in the platform "SAP S/4HANA"). Rows without that part are grouped under the platform. The data itself is never read or shown.

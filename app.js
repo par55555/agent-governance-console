@@ -81,9 +81,9 @@
       platform: str(d.platform), framework: str(d.framework), project: str(d.gcp_project), region: str(d.region),
       model: str(d.model && d.model.primary, 'gemini-3-flash'), temp: num(d.model && d.model.temperature, 0.2),
       trigger: str(d.trigger), short: str(d.summary), desc: str(d.description) || str(d.summary), instr: str(d.instructions),
-      inputs: arr(d.inputs).filter((x) => okBp(x.process)).map((x) => ({ system: str(x.system), what: str(x.what), bp: x.process, mode: mode(x.access) })),
+      inputs: arr(d.inputs).filter((x) => okBp(x.process)).map((x) => ({ system: str(x.system), what: str(x.what), bp: x.process, mode: mode(x.access), dtype: str(x.data_type), struct: str(x.structure), fmt: str(x.format) })),
       tools: arr(d.tools).filter((x) => okBp(x.process)).map((t) => ({ name: str(t.name), desc: str(t.description), system: str(t.system), bp: t.process, mode: mode(t.access), approval: str(t.approval_by), w: num(weights[t.name], 1) })),
-      outputs: arr(d.outputs).filter((x) => okBp(x.process)).map((x) => ({ dest: str(x.destination), what: str(x.what), bp: x.process, mode: mode(x.access || 'write') })),
+      outputs: arr(d.outputs).filter((x) => okBp(x.process)).map((x) => ({ dest: str(x.destination), what: str(x.what), bp: x.process, mode: mode(x.access || 'write'), dtype: str(x.data_type), struct: str(x.structure), fmt: str(x.format) })),
       users: arr(d.users).filter((x) => okBp(x.process)).map((x) => ({ bp: x.process, role: str(x.role), n: Math.max(0, Math.round(num(x.people))) })),
       guard: arr(d.guardrails).map((g) => str(g)).filter(Boolean), telemetry: arr(d.telemetry_sources).map((g) => str(g)).filter(Boolean),
       sub: d.home_subprocess ? str(d.home_subprocess) : null, basis: BASIS_LABEL[d.home_basis] ? d.home_basis : BASIS_BY_ARCH[d.archetype] || 'step', basisNote: str(d.home_basis_note),
@@ -171,9 +171,9 @@
   }
 
   /* ---------------------------------------------------------------- state + routing */
-  const state = { bp: 'o2c', view: 'bp', lifecycle: 'production', arch: 'all', step: null, sort: 'req', q: '', density: 'comfortable', crossTab: 'in', agent: null, tab: 'overview', collapsed: {} };
-  try { const saved = JSON.parse(localStorage.getItem('agc-prefs') || '{}'); if (saved.density) state.density = saved.density; if (saved.collapsed) state.collapsed = saved.collapsed; } catch (e) { /* storage unavailable */ }
-  function savePrefs() { try { localStorage.setItem('agc-prefs', JSON.stringify({ density: state.density, collapsed: state.collapsed })); } catch (e) { /* ignore */ } }
+  const state = { bp: 'o2c', view: 'bp', lifecycle: 'production', arch: 'all', step: null, homeLayer: 'all', homeDraft: 3, theme: 'neon', bpView: 'agents', dq: '', dStruct: 'all', dataSys: null, sort: 'req', q: '', density: 'comfortable', crossTab: 'in', agent: null, tab: 'overview', collapsed: {} };
+  try { const saved = JSON.parse(localStorage.getItem('agc-prefs') || '{}'); if (saved.density) state.density = saved.density; if (saved.collapsed) state.collapsed = saved.collapsed; if ([2, 3].includes(saved.homeDraft)) state.homeDraft = saved.homeDraft; if (saved.theme === 'light') state.theme = 'light'; if (saved.bpView === 'data') state.bpView = 'data'; } catch (e) { /* storage unavailable */ }
+  function savePrefs() { try { localStorage.setItem('agc-prefs', JSON.stringify({ density: state.density, collapsed: state.collapsed, homeDraft: state.homeDraft, theme: state.theme, bpView: state.bpView })); } catch (e) { /* ignore */ } }
 
   function parseHash() {
     const h = (location.hash || '').replace(/^#/, '');
@@ -183,7 +183,7 @@
       if (state.agent !== a.id) state.tab = 'overview';
       state.agent = a.id;
     } else if (h === 'all') { state.view = 'all'; state.agent = null; }
-    else if (BP[h]) { if (state.bp !== h) state.step = null; state.view = 'bp'; state.bp = h; state.agent = null; }
+    else if (BP[h]) { if (state.bp !== h) { state.step = null; state.dataSys = null; state.dq = ''; state.dStruct = 'all'; } state.view = 'bp'; state.bp = h; state.agent = null; }
     else { state.agent = null; }
     state._booted = true;
   }
@@ -220,7 +220,10 @@
     copy: '<rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.5A1 1 0 0 1 4 2.5h6.5"/>',
     write: '<path d="M10.5 2.5l3 3-8 8H2.5v-3z"/>',
     info: '<circle cx="8" cy="8" r="6"/><path d="M8 7.2v4M8 4.8v.2"/>',
-    chev: '<path d="M5 6.5l3 3 3-3"/>'
+    chev: '<path d="M5 6.5l3 3 3-3"/>',
+    check: '<path d="M3.5 8.5l3 3 6-7"/>',
+    users: '<circle cx="6" cy="5.5" r="2.3"/><path d="M2 13c.4-2.4 2-3.7 4-3.7s3.6 1.3 4 3.7"/><path d="M10.5 3.6a2.2 2.2 0 010 4M12 9.6c1.1.5 1.8 1.6 2 3.4"/>',
+    data: '<ellipse cx="8" cy="4" rx="5" ry="1.8"/><path d="M3 4v8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V4M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8"/>'
   };
   const icon = (n, cls) => '<svg class="ic ' + (cls || '') + '" viewBox="0 0 16 16" aria-hidden="true">' + ICON[n] + '</svg>';
   const archTag = (a) => '<span class="arch" data-tt="' + esc(ARCH[a.arch].label + ': ' + ARCH[a.arch].blurb) + '">' + icon(a.arch) + esc(ARCH[a.arch].label) + '</span>';
@@ -308,6 +311,8 @@
 
   /* ---------------------------------------------------------------- top bar + nav */
   function renderTop() {
+    document.body.classList.toggle('neon', state.theme === 'neon'); document.body.classList.toggle('light', state.theme === 'light');
+    $('#theme').innerHTML = [['neon', 'Neon'], ['light', 'Light']].map(([k, l]) => '<button type="button" class="seg-btn' + (state.theme === k ? ' on' : '') + '" data-theme-set="' + k + '" aria-pressed="' + (state.theme === k) + '">' + l + '</button>').join('');
     $('#asof').textContent = TENANT.asOf ? 'Telemetry as of ' + TENANT.asOf : '';
     $('#tenant').textContent = TENANT.name || '';
     $('#src').innerHTML = srcPill();
@@ -377,6 +382,156 @@
       '</button>';
   }
 
+  /* ---------------------------------------------------------------- data view: what data exists in a business unit */
+  // What we know about a source platform. Datasets inherit these unless their name says otherwise, or the
+  // agent spec sets data_type / structure / format on the row. Everything here is inferred, never read from the data.
+  const DATA_PLATFORMS = [
+    [/^SAP /, { kind: 'ERP', structure: 'Structured', format: 'Relational tables (SAP HANA)', iface: 'OData / BAPI' }],
+    [/^BigQuery ML/, { kind: 'ML model', structure: 'Structured', format: 'Model scores', iface: 'SQL (ML.PREDICT)', dtype: 'Model output' }],
+    [/^BigQuery/, { kind: 'Data warehouse', structure: 'Structured', format: 'Columnar tables', iface: 'SQL', dtype: 'Analytics' }],
+    [/^Looker/, { kind: 'BI', structure: 'Structured', format: 'Semantic model (LookML)', iface: 'Looker API', dtype: 'Analytics' }],
+    [/^Gmail/, { kind: 'Email', structure: 'Unstructured', format: 'Email (MIME) + attachments', iface: 'Gmail API', dtype: 'Communications', pii: true }],
+    [/^Google Chat|^B2B portal chat|^Chat answers/, { kind: 'Messaging', structure: 'Unstructured', format: 'Chat messages', iface: 'Chat API', dtype: 'Communications' }],
+    [/^Google Docs|^Google Drive/, { kind: 'Documents', structure: 'Unstructured', format: 'Docs and PDF', iface: 'Drive API', dtype: 'Documents' }],
+    [/^Google Sheets/, { kind: 'Spreadsheet', structure: 'Semi-structured', format: 'Spreadsheet', iface: 'Sheets API' }],
+    [/^Google Calendar/, { kind: 'Calendar', structure: 'Semi-structured', format: 'Calendar events', iface: 'Calendar API', dtype: 'Communications', pii: true }],
+    [/^Document AI/, { kind: 'Document parser', structure: 'Unstructured', format: 'PDF and images in, JSON out', iface: 'Document AI API', dtype: 'Documents' }],
+    [/^Vertex AI Search/, { kind: 'Search index', structure: 'Unstructured', format: 'Indexed documents (vector + keyword)', iface: 'Search API', dtype: 'Knowledge' }],
+    [/^Vertex AI/, { kind: 'ML model', structure: 'Structured', format: 'Model predictions', iface: 'Vertex AI API', dtype: 'Model output' }],
+    [/^Pub\/Sub/, { kind: 'Event stream', structure: 'Semi-structured', format: 'JSON messages', iface: 'Pub/Sub', dtype: 'Events' }],
+    [/^Salesforce/, { kind: 'CRM', structure: 'Structured', format: 'Objects (records)', iface: 'REST API', pii: true }],
+    [/^ServiceNow/, { kind: 'Service management', structure: 'Structured', format: 'Tickets and records', iface: 'REST API' }],
+    [/^Jira/, { kind: 'Work tracking', structure: 'Structured', format: 'Issues', iface: 'REST API' }],
+    [/^Icertis/, { kind: 'Contract management', structure: 'Semi-structured', format: 'Contract records + PDF', iface: 'REST API', dtype: 'Contracts' }],
+    [/^Workiva/, { kind: 'Reporting', structure: 'Semi-structured', format: 'Linked documents and XBRL', iface: 'REST API', dtype: 'Documents' }],
+    [/^Veeva/, { kind: 'Regulated documents', structure: 'Semi-structured', format: 'Controlled documents + metadata', iface: 'Vault API', dtype: 'Documents' }],
+    [/^BlackLine/, { kind: 'Close and reconciliation', structure: 'Structured', format: 'Records', iface: 'REST API', dtype: 'Financial postings' }],
+    [/^Kyriba/, { kind: 'Treasury', structure: 'Semi-structured', format: 'Bank files (BAI2, MT940)', iface: 'REST API / SFTP', dtype: 'Transactions' }],
+    [/^Avalara/, { kind: 'Tax engine', structure: 'Structured', format: 'Tax calculations', iface: 'REST API', dtype: 'Reference' }],
+    [/^Coupa/, { kind: 'Procurement', structure: 'Structured', format: 'Records', iface: 'REST API' }],
+    [/^Workday|^UKG/, { kind: 'HR', structure: 'Structured', format: 'Worker records', iface: 'REST / SOAP API', pii: true }],
+    [/^Okta/, { kind: 'Identity', structure: 'Structured', format: 'Users and groups', iface: 'REST API', dtype: 'Master data', pii: true }],
+    [/^project44|^Blue Yonder|^Manhattan/, { kind: 'Logistics', structure: 'Semi-structured', format: 'JSON shipment events', iface: 'REST API', dtype: 'Events' }],
+    [/MES|^Litmus|meters/i, { kind: 'Plant systems', structure: 'Semi-structured', format: 'Time series (sensor tags)', iface: 'OPC UA / MQTT', dtype: 'Events' }],
+    [/LIMS/, { kind: 'Lab', structure: 'Structured', format: 'Samples and test results', iface: 'REST API', dtype: 'Transactions' }],
+    [/^Salsify/, { kind: 'Product information', structure: 'Semi-structured', format: 'Product records (JSON)', iface: 'REST API', dtype: 'Master data' }],
+    [/^AuditBoard/, { kind: 'Audit and risk', structure: 'Structured', format: 'Controls and findings', iface: 'REST API' }],
+    [/^CoStar/, { kind: 'Lease accounting', structure: 'Structured', format: 'Lease records', iface: 'REST API', dtype: 'Contracts' }],
+    [/^Circana|^S&P|^Dun|^EcoVadis|^Amazon Ads|^Walmart Connect|^Bazaarvoice|^Regulatory feeds/, { kind: 'Third-party data', structure: 'Semi-structured', format: 'Licensed feed (JSON / CSV)', iface: 'Vendor API', dtype: 'Reference' }],
+    [/EDI|remittance/i, { kind: 'EDI', structure: 'Semi-structured', format: 'EDI X12', iface: 'EDI gateway', dtype: 'Transactions' }],
+    [/worklist|queue/i, { kind: 'Work queue', structure: 'Structured', format: 'Queue items', iface: 'Pub/Sub / app API', dtype: 'Transactions' }],
+    [/transcripts/i, { kind: 'Documents', structure: 'Unstructured', format: 'Text transcripts', iface: 'File drop', dtype: 'Documents' }]
+  ];
+  const UNKNOWN_PLATFORM = { kind: 'Unclassified', structure: 'Unknown', format: 'Not recorded', iface: 'Not recorded' };
+  const platformInfo = (name) => { const hit = DATA_PLATFORMS.find(([re]) => re.test(name)); return hit ? hit[1] : UNKNOWN_PLATFORM; };
+  // dataset-level hints from the dataset's own name and description
+  const DS_TYPES = [
+    [/EDI|\b8(50|12|20)\b/, { dtype: 'Transactions', structure: 'Semi-structured', format: 'EDI X12' }],
+    [/BAI2|MT940|bank statement/i, { dtype: 'Transactions', structure: 'Semi-structured', format: 'Bank files (BAI2)' }],
+    [/\bPDF\b|remittance advice/i, { structure: 'Unstructured', format: 'PDF documents' }],
+    [/notes|memo|commentary|rationale|transcript/i, { dtype: 'Documents', structure: 'Unstructured', format: 'Free text' }],
+    [/event log|events\b|event\b/i, { dtype: 'Events' }],
+    [/master|accounts\b|catalog|supplier list|vendor list/i, { dtype: 'Master data' }],
+    [/\bGL\b|general ledger|journal|trial balance|ledger|clearing|FI\b|posting/i, { dtype: 'Financial postings' }],
+    [/policy|policies|procedure|manual|library|knowledge|playbook/i, { dtype: 'Knowledge', structure: 'Unstructured', format: 'Documents' }],
+    [/contract|agreement|lease/i, { dtype: 'Contracts' }],
+    [/mart|aging|score|forecast|recommend|kpi|variance|accrual|model|trend|signal/i, { dtype: 'Analytics' }],
+    [/order|invoice|billing|deliver|payment|receipt|credit memo|claim|case|ticket|hold|promise|shipment|PO\b|purchase/i, { dtype: 'Transactions' }],
+    [/rate|price|condition|tax|exemption/i, { dtype: 'Reference' }],
+    [/payroll|employee|candidate|worker|people|timesheet/i, { pii: true }]
+  ];
+  const DTYPE_HINT = {
+    'Master data': 'Customers, products, suppliers and other records that change rarely.',
+    Transactions: 'Day-to-day business events: orders, invoices, payments, cases.',
+    'Financial postings': 'Ledger entries and balances that feed the financial statements.',
+    Analytics: 'Derived tables: marts, aggregates, scores, forecasts.',
+    Events: 'Time-stamped event logs and streams.',
+    Documents: 'Files and free text: PDFs, notes, reports.',
+    Knowledge: 'Policies, manuals and indexed content agents search.',
+    Communications: 'Email, chat and calendar content.',
+    Contracts: 'Contract and lease records, often with the signed document.',
+    Reference: 'Rates, prices, tax rules and licensed third-party data.',
+    'Model output': 'Scores and predictions produced by a model.',
+    Other: 'Not classified yet.'
+  };
+  const STRUCT_ORDER = ['Structured', 'Semi-structured', 'Unstructured', 'Unknown'];
+  function classifyDataset(platform, dataset, whats, rows) {
+    const P = platformInfo(platform); const text = dataset + ' ' + whats.join(' ');
+    const out = { dtype: P.dtype || 'Transactions', structure: P.structure, format: P.format, iface: P.iface, pii: !!P.pii, inferred: true };
+    if (!P.dtype && P.kind === 'Unclassified') out.dtype = 'Other';
+    for (const [re, v] of DS_TYPES) if (re.test(text)) { Object.keys(v).forEach((k) => { if (k === 'pii') out.pii = out.pii || v.pii; else if (!out['_' + k]) { out[k] = v[k]; out['_' + k] = 1; } }); }
+    // values written in the agent spec win over anything inferred
+    const set = rows.find((r) => r.dtype || r.struct || r.fmt);
+    if (set) { if (set.dtype) out.dtype = set.dtype; if (set.struct) out.structure = set.struct; if (set.fmt) out.format = set.fmt; out.inferred = false; }
+    return out;
+  }
+  // every dataset that belongs to a business unit, grouped by source platform
+  function dataCatalog(bpId) {
+    const sys = {};
+    AGENTS.filter(lifecycleOk).forEach((a) => {
+      const add = (bp, full, what, mode, kind, extra) => {
+        if (bp !== bpId) return;
+        const plat = platformOf(full).replace(/ API$/, ''); const parts = String(full || '').split(' · ');
+        const ds = parts.length > 1 ? parts.slice(1).join(' · ') : (kind === 'tool' ? 'Direct API access' : what || plat);
+        const P = sys[plat] || (sys[plat] = { name: plat, info: platformInfo(plat), ds: {}, agents: new Set(), w: new Set() });
+        P.agents.add(a.id); if (mode === 'w') P.w.add(a.id);
+        const D = P.ds[ds] || (P.ds[ds] = { name: ds, whats: new Set(), tools: new Set(), r: new Set(), w: new Set(), rows: [] });
+        if (what) D.whats.add(what); if (kind === 'tool') D.tools.add(extra);
+        (mode === 'w' ? D.w : D.r).add(a.id); D.rows.push({ dtype: extra && extra.dtype, struct: extra && extra.struct, fmt: extra && extra.fmt });
+      };
+      a.inputs.forEach((x) => add(x.bp, x.system, x.what, x.mode, 'in', x));
+      a.outputs.forEach((x) => add(x.bp, x.dest, x.what, x.mode, 'out', x));
+      a.tools.forEach((x) => add(x.bp, x.system, '', x.mode, 'tool', x.name));
+    });
+    return Object.values(sys).map((P) => {
+      P.list = Object.values(P.ds).map((D) => { const c = classifyDataset(P.name, D.name, Array.from(D.whats), D.rows); return Object.assign(D, c); })
+        .sort((x, y) => STRUCT_ORDER.indexOf(x.structure) - STRUCT_ORDER.indexOf(y.structure) || x.name.localeCompare(y.name));
+      P.structs = STRUCT_ORDER.filter((s) => P.list.some((d) => d.structure === s));
+      P.pii = P.list.some((d) => d.pii);
+      return P;
+    }).sort((x, y) => y.agents.size - x.agents.size || y.list.length - x.list.length || x.name.localeCompare(y.name));
+  }
+  const structTag = (s) => '<span class="st st-' + s.toLowerCase().replace(/[^a-z]/g, '') + '" title="' + esc(s) + '">' + esc(s) + '</span>';
+
+  function dataSection(b, toggle) {
+    const cat = dataCatalog(b.id);
+    const q = state.dq.trim().toLowerCase(); const sf = state.dStruct;
+    const match = (P) => (!q || (P.name + ' ' + P.info.kind + ' ' + P.list.map((d) => d.name + ' ' + Array.from(d.whats).join(' ') + ' ' + d.dtype + ' ' + d.format).join(' ')).toLowerCase().includes(q)) && (sf === 'all' || P.structs.includes(sf));
+    const shown = cat.filter(match);
+    const nds = cat.reduce((x, P) => x + P.list.length, 0);
+    const counts = {}; cat.forEach((P) => P.list.forEach((d) => { counts[d.structure] = (counts[d.structure] || 0) + 1; }));
+    if (state.dataSys && !cat.some((P) => P.name === state.dataSys)) state.dataSys = null;
+    let h = '<section class="sec" aria-labelledby="sec-agents"><div class="sec-h"><h2 id="sec-agents">Data in ' + esc(b.name) + ' <span class="count">' + cat.length + '</span></h2>' +
+      '<div class="toolbar"><label class="search-in">' + icon('search') + '<span class="sr">Filter data</span><input id="dq" type="search" placeholder="Filter by system, dataset or format" value="' + esc(state.dq) + '"></label>' + toggle + '</div></div>';
+    h += '<p class="sec-sub">' + cat.length + ' source ' + plural(cat.length, 'system') + ' hold ' + nds + ' ' + plural(nds, 'dataset') + ' that agents read or write in ' + esc(b.name) + '. Select a system to see its datasets. Nothing here shows the data itself; type, structure and format are inferred from the system unless the agent spec records them.</p>';
+    h += '<div class="filters"><div class="seg sm" role="group" aria-label="Structure">' + [['all', 'All structures', nds]].concat(STRUCT_ORDER.filter((s) => counts[s]).map((s) => [s, s, counts[s]])).map(([k, l, n]) =>
+      '<button type="button" class="seg-btn' + (sf === k ? ' on' : '') + '" data-dstruct="' + esc(k) + '" aria-pressed="' + (sf === k) + '">' + esc(l) + ' <span class="seg-n">' + n + '</span></button>').join('') + '</div></div>';
+    if (!shown.length) return h + '<div class="empty">' + (cat.length ? 'No systems match these filters.' : 'No agent reads or writes data in ' + esc(b.name) + ' yet.') + '</div></section>';
+    h += '<div class="grid dgrid ' + state.density + '">' + shown.map((P) => {
+      const on = state.dataSys === P.name; const kinds = Array.from(new Set(P.list.map((d) => d.dtype)));
+      return '<button type="button" class="tile dtile' + (on ? ' on' : '') + '" data-dsys="' + esc(P.name) + '" aria-expanded="' + on + '" aria-controls="dpanel">' +
+        '<span class="tile-step">' + esc(P.info.kind) + '</span>' +
+        '<div class="tile-top"><span class="dmark">' + esc(sysAbbr(P.name)) + '</span><span class="tile-id"><span class="tile-name">' + esc(P.name) + '</span><span class="tile-meta">' + P.structs.map(structTag).join('') + '</span></span></div>' +
+        '<div class="tile-stats"><span class="stat"><b>' + P.list.length + '</b><small>' + plural(P.list.length, 'dataset') + '</small></span><span class="stat"><b>' + P.agents.size + '</b><small>' + plural(P.agents.size, 'agent uses', 'agents use') + ' it</small></span></div>' +
+        '<div class="tile-foot"><span class="dkinds">' + kinds.slice(0, 3).map((k) => '<span class="dk">' + esc(k) + '</span>').join('') + (kinds.length > 3 ? '<span class="dk more">+' + (kinds.length - 3) + '</span>' : '') + '</span>' +
+          (P.w.size ? '<span class="dw">' + icon('write', 'mini') + P.w.size + ' ' + plural(P.w.size, 'writer') + '</span>' : '') + (P.pii ? '<span class="dpii" title="Likely holds personal data">Personal data</span>' : '') + '</div></button>';
+    }).join('') + '</div>';
+    const P = shown.find((x) => x.name === state.dataSys);
+    if (P) {
+      h += '<div class="dpanel" id="dpanel" role="region" aria-label="' + esc(P.name + ' datasets') + '"><div class="dpanel-h"><div><span class="dmark lg">' + esc(sysAbbr(P.name)) + '</span></div><div class="dpanel-t"><h3>' + esc(P.name) + '</h3><p>' + esc(P.info.kind) + ' system. Accessed through ' + esc(P.info.iface) + '. ' + P.list.length + ' ' + plural(P.list.length, 'dataset') + ' used by ' + P.agents.size + ' ' + plural(P.agents.size, 'agent') + (P.w.size ? ', ' + P.w.size + ' of which ' + plural(P.w.size, 'writes', 'write') + ' to it' : '') + '.</p></div>' +
+        '<button type="button" class="btn" data-dsys="' + esc(P.name) + '">' + icon('close') + 'Close</button></div>' +
+        '<div class="tbl-wrap"><table class="tbl dtbl"><colgroup><col style="width:24%"><col style="width:30%"><col style="width:17%"><col style="width:20%"><col style="width:9%"></colgroup><thead><tr><th>Dataset</th><th>What it holds</th><th>Type of data</th><th>Structure and format</th><th class="num">Agents</th></tr></thead><tbody>' +
+        P.list.map((d) => { const users = Array.from(new Set([...d.r, ...d.w])).map((id) => AG[id]).filter(Boolean);
+          return '<tr><td><b>' + esc(d.name) + '</b>' + (d.tools.size ? '<div class="dsub">' + Array.from(d.tools).map((t) => '<code>' + esc(t) + '</code>').join(' ') + '</div>' : '') + '</td>' +
+            '<td>' + (d.whats.size ? Array.from(d.whats).map(esc).join('<br>') : '<span class="muted">Reached through tools only</span>') + '</td>' +
+            '<td><span class="dk" data-tt="' + esc(DTYPE_HINT[d.dtype] || '') + '">' + esc(d.dtype) + '</span>' + (d.pii ? '<div class="dsub"><span class="dpii">Personal data</span></div>' : '') + '</td>' +
+            '<td>' + structTag(d.structure) + '<div class="dfmt">' + esc(d.format) + (d.inferred ? ' <span class="muted">(inferred)</span>' : '') + '</div></td>' +
+            '<td class="num"><span class="dag" data-tt="' + esc(users.map((a) => a.name + (d.w.has(a.id) ? ' (writes)' : ' (reads)')).join('\n')) + '">' + users.length + (d.w.size ? ' <span class="warn-t">' + icon('write', 'mini') + d.w.size + '</span>' : '') + '</span></td></tr>'; }).join('') +
+        '</tbody></table></div><p class="dnote">Type, structure and format are inferred from the system and dataset name unless the agent spec sets <code>data_type</code>, <code>structure</code> or <code>format</code> on the row. Confirm with the data owner before relying on them.</p></div>';
+    }
+    return h + '</section>';
+  }
+
   function renderBP() {
     const b = BP[state.bp];
     const homeAll = AGENTS.filter((a) => a.home === b.id && lifecycleOk(a));
@@ -439,12 +594,15 @@
           '<button type="button" class="seg-btn' + ((state.step || '') === k ? ' on' : '') + (n ? '' : ' none') + '" data-step="' + esc(k) + '" aria-pressed="' + ((state.step || '') === k) + '">' + esc(l) + ' <span class="seg-n">' + n + '</span></button>').join('') + '</div></div>' +
       spark + '</header>';
 
+    const viewToggle = '<div class="seg sm vtoggle" role="group" aria-label="View">' + [['agents', 'Agent view'], ['data', 'Data view']].map(([k, l]) => '<button type="button" class="seg-btn' + (state.bpView === k ? ' on' : '') + '" data-bpview="' + k + '" aria-pressed="' + (state.bpView === k) + '">' + icon(k === 'agents' ? 'automation' : 'data') + l + '</button>').join('') + '</div>';
+    if (state.bpView === 'data') h += dataSection(b, viewToggle);
+    else {
     h += '<section class="sec" aria-labelledby="sec-agents"><div class="sec-h"><h2 id="sec-agents">' + (state.step ? esc(state.step) + ' agents in ' : 'Agents in ') + esc(b.name) + ' <span class="count">' + list.length + '</span>' + addBtn(b.id) + '</h2>' +
       '<div class="toolbar">' +
       '<label class="search-in">' + icon('search') + '<span class="sr">Filter agents</span><input id="q" type="search" placeholder="Filter by name, system or tool" value="' + esc(state.q) + '"></label>' +
       '<label class="sel"><span class="sr">Sort by</span><select id="sort">' + [['req', 'Most API requests'], ['users', 'Most users'], ['cost', 'Highest spend'], ['cross', 'Most processes reached'], ['name', 'Name']].map(([k, l]) => '<option value="' + k + '"' + (state.sort === k ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>' +
       '<div class="seg sm" role="group" aria-label="Tile density"><button type="button" class="seg-btn' + (state.density === 'comfortable' ? ' on' : '') + '" data-density="comfortable">Comfortable</button><button type="button" class="seg-btn' + (state.density === 'compact' ? ' on' : '') + '" data-density="compact">Compact</button></div>' +
-      '</div></div>';
+      viewToggle + '</div></div>';
     h += '<div class="filters">' + '<div class="seg sm" role="group" aria-label="Agent type">' + ['all', 'conversational', 'automation', 'analytical', 'monitoring'].map((k) =>
         '<button type="button" class="seg-btn' + (state.arch === k ? ' on' : '') + '" data-arch="' + k + '" aria-pressed="' + (state.arch === k) + '">' + (k === 'all' ? 'All types' : icon(k) + ARCH[k].label.replace('Process automation', 'Automation')) + ' <span class="seg-n">' + (k === 'all' ? stepAll.length : (archCounts[k] || 0)) + '</span></button>').join('') + '</div>';
     h += '<details class="legend"><summary>' + icon('info') + 'How agents are classified</summary><div class="legend-body">' +
@@ -455,6 +613,7 @@
     h += list.length ? '<div class="grid ' + state.density + '">' + list.map(tile).join('') + '</div>'
       : '<div class="empty">' + (homeAll.length ? (state.step && !stepAll.length ? 'No ' + lifeWord + 'agents perform ' + esc(state.step) + ' yet.' : 'No ' + lifeWord + 'agents match these filters in ' + esc(b.name) + '.') : 'No ' + lifeWord + 'agents are registered in ' + esc(b.name) + ' yet.' + (writeOk() ? '<br><button type="button" class="btn primary" data-add="' + esc(b.id) + '">' + icon('plus') + 'Add agent</button>' : '')) + '</div>';
     h += '</section>';
+    }
 
     const xs = state.crossTab === 'in' ? sortAgents(inbound) : sortAgents(outbound);
     h += '<section class="sec" aria-labelledby="sec-cross"><div class="sec-h"><h2 id="sec-cross">Cross-process agents</h2>' +
@@ -475,49 +634,700 @@
   }
   function kpi(v, l, tt) { return '<div class="kpi"' + (tt ? ' data-tt="' + esc(tt) + '"' : '') + '><b>' + esc(String(v)) + '</b><span>' + esc(l) + (tt ? ' ' + icon('info', 'mini') : '') + '</span></div>'; }
 
-  /* ---------------------------------------------------------------- All view */
+  /* ---------------------------------------------------------------- Home: All business processes */
+  // The enterprise as three stacked layers: people on top, agents in the middle, data at the base.
+  // A process keeps the same spot on every layer, so one column reads as one process from top to bottom.
+  const platformOf = (s) => String(s || '').split(' · ')[0].trim() || 'Unnamed system';
+  let STACK = null; // running animation; stopped whenever the view is redrawn
+
+  function homeModel(list) {
+    const per = {}; BPS.forEach((b) => { per[b.id] = { agents: [], users: 0, data: 0, dataW: 0, systems: new Set(), sys: {}, roles: {}, out: 0, outW: 0 }; });
+    const links = {}; const plats = {};
+    list.forEach((a) => {
+      const c = calc(a); const P = per[a.home]; P.agents.push(a);
+      if (c.cross.length) P.out++; if (c.crossWrite.length) P.outW++;
+      a.users.forEach((u) => { per[u.bp].users += u.n; const r = per[u.bp].roles[u.role] || (per[u.bp].roles[u.role] = { n: 0, agents: new Set() }); r.n += u.n; r.agents.add(a.id); });
+      const touchData = (bp, sys, m) => {
+        per[bp].data++; if (m === 'w') per[bp].dataW++;
+        const k = platformOf(sys); per[bp].systems.add(k);
+        const sy = per[bp].sys[k] || (per[bp].sys[k] = { agents: new Set(), w: new Set() }); sy.agents.add(a.id); if (m === 'w') sy.w.add(a.id);
+        const p = plats[k] || (plats[k] = { name: k, bps: new Set(), r: new Set(), w: new Set(), rows: 0 });
+        p.bps.add(bp); p.rows++; (m === 'w' ? p.w : p.r).add(a.id);
+      };
+      a.inputs.forEach((x) => touchData(x.bp, x.system, x.mode));
+      a.tools.forEach((x) => touchData(x.bp, x.system, x.mode));
+      a.outputs.forEach((x) => touchData(x.bp, x.dest, x.mode));
+      c.cross.forEach((t) => {
+        const k = a.home + '|' + t; const l = links[k] || (links[k] = { from: a.home, to: t, n: 0, w: 0, names: [] });
+        l.n++; if (c.touch[t].write) l.w++; l.names.push(a.name);
+      });
+    });
+    return { per, links: Object.values(links), plats: Object.values(plats) };
+  }
+
+  // geometry: oblique planes, v = 0 at the back edge, v = 1 at the front edge
+  const SG = { W: 800, D: 150, SK: 150, X0: 130, Y: [24, 236, 448], VW: 1090, VH: 616, T: 7 };
+  const LAYERS = [{ k: 'users', label: 'Users' }, { k: 'agents', label: 'Agents' }, { k: 'data', label: 'Data' }];
+  const TIER_V = { 3: 0.2, 1: 0.53, 2: 0.86 };
+  const P3 = (u, v, L) => ({ x: SG.X0 + u * SG.W + (1 - v) * SG.SK, y: SG.Y[L] + v * SG.D });
+  function stackPos() {
+    const pos = {};
+    [1, 2, 3].forEach((t) => {
+      const row = BPS.filter((b) => b.tier === t);
+      row.forEach((b, i) => { pos[b.id] = { u: 0.05 + ((i + 0.5) / row.length) * 0.9, v: TIER_V[t] }; });
+    });
+    return pos;
+  }
+  const f1 = (n) => (Math.round(n * 10) / 10).toString();
+  const poly = (pts) => pts.map((p) => f1(p.x) + ',' + f1(p.y)).join(' ');
+
+  function stackSvg(M) {
+    const pos = stackPos(); const { per, links } = M;
+    const maxU = Math.max(1, ...BPS.map((b) => per[b.id].users));
+    const maxD = Math.max(1, ...BPS.map((b) => per[b.id].data));
+    const topU = BPS.slice().sort((a, b) => per[b.id].users - per[a.id].users).slice(0, 4).map((b) => b.id);
+    const topD = BPS.slice().sort((a, b) => per[b.id].data - per[a.id].data).slice(0, 4).map((b) => b.id);
+    const at = (id, L) => P3(pos[id].u, pos[id].v, L);
+    const tip = (b) => {
+      const p = per[b.id]; const n = p.agents.length;
+      return b.name + '\n' + n + ' ' + plural(n, 'agent') + ' homed here' + (p.outW ? ', ' + p.outW + ' ' + plural(p.outW, 'writes', 'write') + ' into other processes' : '') +
+        '\n' + nf.format(p.users) + ' people use agents here\n' + p.data + ' data ' + plural(p.data, 'touchpoint') + ' across ' + p.systems.size + ' ' + plural(p.systems.size, 'system');
+    };
+    let s = '<svg class="stack" id="stack" data-layer="' + esc(state.homeLayer) + '" viewBox="0 0 ' + SG.VW + ' ' + SG.VH + '" role="img" aria-labelledby="stack-t stack-d">' +
+      '<title id="stack-t">Agents across the enterprise, in three layers</title><desc id="stack-d">Users on top, agents in the middle, data at the base. Each business process sits in the same position on every layer. Arcs show agents reaching into other processes; tangerine arcs write into them.</desc>' +
+      '<defs><marker id="chev" viewBox="0 0 8 8" refX="5" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1l4 3-4 3" fill="none" stroke="currentColor" stroke-width="1.4"/></marker></defs>';
+
+    // columns behind the planes: one dashed line per process, data to users
+    s += '<g class="cols">' + BPS.map((b) => { const a = at(b.id, 2), c = at(b.id, 0); return '<line class="col p" data-p="' + b.id + '" x1="' + f1(a.x) + '" y1="' + f1(a.y) + '" x2="' + f1(c.x) + '" y2="' + f1(c.y) + '"/>'; }).join('') + '</g>';
+
+    // planes, bottom first
+    [2, 1, 0].forEach((L) => {
+      const corners = [P3(0, 0, L), P3(1, 0, L), P3(1, 1, L), P3(0, 1, L)];
+      const lab = P3(0, 0.5, L);
+      const tot = L === 0 ? nf.format(BPS.reduce((x, b) => x + per[b.id].users, 0)) + ' people'
+        : L === 1 ? nf.format(BPS.reduce((x, b) => x + per[b.id].agents.length, 0)) + ' agents'
+        : nf.format(M.plats.length) + ' source systems';
+      const dn = (p) => ({ x: p.x, y: p.y + SG.T });
+      s += '<g class="L L' + L + '"><polygon class="face" points="' + poly([corners[3], corners[2], dn(corners[2]), dn(corners[3])]) + '"/>' +
+        '<polygon class="face side" points="' + poly([corners[1], corners[2], dn(corners[2]), dn(corners[1])]) + '"/>' +
+        '<polygon class="plane" points="' + poly(corners) + '"/>' +
+        '<text class="lbl" x="' + f1(lab.x - 18) + '" y="' + f1(lab.y - 2) + '" text-anchor="end">' + LAYERS[L].label + '</text>' +
+        '<text class="lbl-n" x="' + f1(lab.x - 18) + '" y="' + f1(lab.y + 16) + '" text-anchor="end">' + esc(tot) + '</text>';
+      if (L === 1) {
+        // the core value chain, left to right
+        const core = BPS.filter((b) => b.tier === 1);
+        for (let i = 0; i < core.length - 1; i++) {
+          const a = at(core[i].id, 1), c = at(core[i + 1].id, 1);
+          const k = 0.34; const x1 = a.x + (c.x - a.x) * k, y1 = a.y + (c.y - a.y) * k, x2 = a.x + (c.x - a.x) * (1 - k), y2 = a.y + (c.y - a.y) * (1 - k);
+          s += '<line class="flow" x1="' + f1(x1) + '" y1="' + f1(y1 + 20) + '" x2="' + f1(x2) + '" y2="' + f1(y2 + 20) + '" marker-end="url(#chev)"/>';
+        }
+      }
+      BPS.forEach((b) => {
+        const { u, v } = pos[b.id]; const c = at(b.id, L); const p = per[b.id];
+        if (L === 1) {
+          const pad = [P3(u - 0.045, v - 0.12, 1), P3(u + 0.045, v - 0.12, 1), P3(u + 0.045, v + 0.12, 1), P3(u - 0.045, v + 0.12, 1)];
+          s += '<g class="p" data-p="' + b.id + '"><polygon class="pad" points="' + poly(pad) + '"/>';
+          const n = p.agents.length, cols = Math.min(4, Math.max(1, n)), sz = 7, gap = 3;
+          p.agents.forEach((a, i) => {
+            const r = Math.floor(i / cols), k = i % cols; const rowN = Math.min(cols, n - r * cols);
+            const x = c.x - (rowN * sz + (rowN - 1) * gap) / 2 + k * (sz + gap), y = c.y - 4 - (r + 1) * (sz + gap);
+            const cls = 'ag' + (a.status !== 'production' ? ' np' : '') + (a.health === 'degraded' || a.health === 'incident' ? ' ' + a.health : '');
+            s += '<rect class="' + cls + '" x="' + f1(x) + '" y="' + f1(y) + '" width="' + sz + '" height="' + sz + '" rx="1.5"/>';
+          });
+          s += '<text class="code" x="' + f1(c.x) + '" y="' + f1(c.y + 14) + '">' + esc(b.code) + '</text></g>';
+        } else if (L === 0) {
+          const r = p.users ? 5 + 21 * Math.sqrt(p.users / maxU) : 0;
+          s += '<g class="p" data-p="' + b.id + '">' + (r ? '<ellipse class="ppl" cx="' + f1(c.x) + '" cy="' + f1(c.y) + '" rx="' + f1(r) + '" ry="' + f1(r * 0.42) + '"/><circle class="ppl-core" cx="' + f1(c.x) + '" cy="' + f1(c.y) + '" r="2.5"/>' : '<circle class="none" cx="' + f1(c.x) + '" cy="' + f1(c.y) + '" r="2"/>') +
+            (topU.includes(b.id) && p.users ? '<text class="val" x="' + f1(c.x + r + 6) + '" y="' + f1(c.y + 4) + '">' + nf.format(p.users) + '</text>' : '') + '</g>';
+        } else {
+          const r = p.data ? 5 + 17 * Math.sqrt(p.data / maxD) : 0;
+          s += '<g class="p" data-p="' + b.id + '">' + (r ? '<ellipse class="pool-o" data-rx="' + f1(r * 1.55) + '" data-ry="' + f1(r * 1.55 * 0.42) + '" cx="' + f1(c.x) + '" cy="' + f1(c.y) + '" rx="' + f1(r * 1.55) + '" ry="' + f1(r * 1.55 * 0.42) + '"/>' +
+            '<ellipse class="pool" cx="' + f1(c.x) + '" cy="' + f1(c.y) + '" rx="' + f1(r) + '" ry="' + f1(r * 0.42) + '"/><circle class="pool-core" cx="' + f1(c.x) + '" cy="' + f1(c.y) + '" r="2.5"/>' : '<circle class="none" cx="' + f1(c.x) + '" cy="' + f1(c.y) + '" r="2"/>') +
+            (topD.includes(b.id) && p.data ? '<text class="val" x="' + f1(c.x + r * 1.55 + 6) + '" y="' + f1(c.y + 4) + '">' + p.data + '</text>' : '') + '</g>';
+        }
+      });
+      s += '</g>';
+    });
+
+    // crossings on the agent layer: arcs lift off the plane; writes drawn last so they sit on top
+    const arcs = links.slice().sort((a, b) => (a.w > 0) - (b.w > 0) || a.n - b.n);
+    s += '<g class="L L1 arcs">' + arcs.map((l) => {
+      const a = at(l.from, 1), c = at(l.to, 1); const d = Math.hypot(c.x - a.x, c.y - a.y);
+      const cx = (a.x + c.x) / 2, cy = Math.min(a.y, c.y) - 18 - d * 0.16;
+      return '<path class="arc p' + (l.w ? ' w' : '') + '" data-p="' + l.from + ' ' + l.to + '" data-from="' + l.from + '" data-to="' + l.to + '" data-n="' + l.n + '" data-w="' + l.w + '" style="stroke-width:' + f1(1 + 0.7 * (l.n - 1)) + '" d="M' + f1(a.x) + ' ' + f1(a.y - 8) + ' Q' + f1(cx) + ' ' + f1(cy) + ' ' + f1(c.x) + ' ' + f1(c.y - 8) + '"/>';
+    }).join('') + '</g>';
+    s += '<g class="pts" aria-hidden="true"></g>';
+
+    // hit areas on top: one per process per layer
+    s += '<g class="hits">' + BPS.map((b) => [0, 1, 2].map((L) => {
+      const { u, v } = pos[b.id];
+      const pts = [P3(u - 0.05, v - 0.16, L), P3(u + 0.05, v - 0.16, L), P3(u + 0.05, v + 0.16, L), P3(u - 0.05, v + 0.16, L)];
+      if (L === 1) pts[0].y -= 34, pts[1].y -= 34;
+      return '<polygon class="hit" data-p="' + b.id + '" data-go="' + b.id + '" data-tt="' + esc(tip(b)) + '" points="' + poly(pts) + '"/>';
+    }).join('')).join('') + '</g>';
+    return s + '</svg>';
+  }
+
+  function bindStack() {
+    if (STACK) { STACK.stop(); STACK = null; }
+    const svg = $('#stack'); if (!svg) return;
+    const parts = Array.from(svg.querySelectorAll('.p'));
+    const setFocus = (id) => {
+      if (svg._focus === id) return; svg._focus = id;
+      svg.classList.toggle('focus', !!id);
+      parts.forEach((el) => el.classList.toggle('on', !!id && el.dataset.p.split(' ').includes(id)));
+    };
+    svg.addEventListener('mouseover', (e) => { const h = e.target.closest('.hit'); setFocus(h ? h.dataset.p : null); });
+    svg.addEventListener('mouseleave', () => setFocus(null));
+
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+    const NS = 'http://www.w3.org/2000/svg'; const g = svg.querySelector('.pts');
+    const line = (el) => ({ x1: +el.getAttribute('x1'), y1: +el.getAttribute('y1'), x2: +el.getAttribute('x2'), y2: +el.getAttribute('y2') });
+    const cols = {}; svg.querySelectorAll('.col').forEach((el) => { cols[el.dataset.p] = line(el); });
+    const per = STACK_MODEL.per;
+    // a column runs data (y1) to users (y2); the agent plane sits in between at the same process position
+    const stop = (id, L) => { const c = cols[id]; const k = (SG.Y[2] - SG.Y[L]) / (SG.Y[2] - SG.Y[0]); return { x: c.x1 + (c.x2 - c.x1) * k, y: c.y1 + (c.y2 - c.y1) * k }; };
+    const src = [];
+    const add = (list, budget) => { const tot = list.reduce((x, s) => x + s.wt, 0) || 1; list.forEach((s) => { s.rate = (budget * s.wt) / tot; s.acc = Math.random(); src.push(s); }); };
+    add(BPS.filter((b) => per[b.id].data && per[b.id].agents.length).map((b) => ({ p: [b.id], layers: ['data', 'agents'], wt: per[b.id].data, a: stop(b.id, 2), b: stop(b.id, 1), dur: 1.7 })), 4.5);
+    add(BPS.filter((b) => per[b.id].users && per[b.id].agents.length).map((b) => ({ p: [b.id], layers: ['agents', 'users'], wt: Math.sqrt(per[b.id].users), a: stop(b.id, 1), b: stop(b.id, 0), dur: 1.5 })), 3.5);
+    add(Array.from(svg.querySelectorAll('.arc')).map((el) => {
+      const w = +el.dataset.w > 0; const to = el.dataset.to;
+      return { p: [el.dataset.from, to], layers: ['agents'], wt: +el.dataset.n * (w ? 1.6 : 1), path: el, len: el.getTotalLength(), back: !w, w, dur: 2.4,
+        then: w ? { p: [to], layers: ['agents', 'data'], a: stop(to, 1), b: stop(to, 2), w: true, dur: 1.1 } : null };
+    }), 6);
+    const live = []; let last = performance.now(); let visible = true; let raf = 0;
+    const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => { visible = es[0].isIntersecting; }) : null; if (io) io.observe(svg);
+    const pools = Array.from(svg.querySelectorAll('.pool-o')).map((el, i) => ({ el, rx: +el.dataset.rx, ry: +el.dataset.ry, ph: i * 1.7 }));
+    const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+    const spawn = (s, now) => { const c = document.createElementNS(NS, 'circle'); c.setAttribute('r', s.w ? '2.8' : '2.3'); c.setAttribute('class', 'pt' + (s.w ? ' w' : '')); g.appendChild(c); live.push({ c, s, t0: now }); };
+    const tick = (now) => {
+      raf = requestAnimationFrame(tick);
+      if (!visible || document.hidden) { last = now; return; }
+      const dt = Math.min(0.1, (now - last) / 1000); last = now;
+      const f = svg._focus, layer = svg.dataset.layer;
+      src.forEach((s) => {
+        if ((f && !s.p.includes(f)) || (layer !== 'all' && !s.layers.includes(layer))) return;
+        s.acc += s.rate * dt * (f ? 4 : 1);
+        while (s.acc >= 1) { s.acc -= 1; if (live.length < 140) spawn(s, now); }
+      });
+      for (let i = live.length - 1; i >= 0; i--) {
+        const p = live[i]; const k = (now - p.t0) / (p.s.dur * 1000);
+        if (k >= 1) { p.c.remove(); live.splice(i, 1); if (p.s.then && (!f || p.s.then.p.includes(f))) spawn(p.s.then, now); continue; }
+        const e = ease(k); let x, y;
+        if (p.s.path) { const pt = p.s.path.getPointAtLength((p.s.back ? 1 - e : e) * p.s.len); x = pt.x; y = pt.y; }
+        else { x = p.s.a.x + (p.s.b.x - p.s.a.x) * e; y = p.s.a.y + (p.s.b.y - p.s.a.y) * e; }
+        p.c.setAttribute('cx', x.toFixed(1)); p.c.setAttribute('cy', y.toFixed(1));
+        p.c.setAttribute('opacity', Math.min(1, k * 6, (1 - k) * 6).toFixed(2));
+      }
+      const t = now / 1000;
+      pools.forEach((pl) => { const m = 1 + 0.12 * Math.sin(t * 1.9 + pl.ph); pl.el.setAttribute('rx', (pl.rx * m).toFixed(1)); pl.el.setAttribute('ry', (pl.ry * m).toFixed(1)); });
+    };
+    raf = requestAnimationFrame(tick);
+    STACK = { stop() { cancelAnimationFrame(raf); if (io) io.disconnect(); } };
+  }
+  let STACK_MODEL = null;
+
+  // ---- draft 2: flat layers stacked like sheets; every business unit is a column through all three
+  const sysAbbr = (name) => { const n = String(name).replace(/^SAP\s+/, '') || String(name); const r = (n.slice(1).match(/[A-Z0-9]/g) || [])[0] || (n.charAt(1) || '').toUpperCase(); return (n.charAt(0).toUpperCase() + r).slice(0, 2); };
+  function layersHtml(M) {
+    const { per } = M; const tiers = [1, 2, 3].filter((t) => BPS.some((b) => b.tier === t));
+    const cols = ['120px']; tiers.forEach((t, i) => { if (i) cols.push('12px'); cols.push('repeat(' + BPS.filter((b) => b.tier === t).length + ', minmax(0, 1fr))'); });
+    const order = []; tiers.forEach((t, i) => { if (i) order.push(null); BPS.filter((b) => b.tier === t).forEach((b) => order.push(b)); });
+    const maxRole = Math.max(1, ...BPS.map((b) => Math.max(0, ...Object.values(per[b.id].roles).map((r) => r.n))));
+    const cell = (b, inner, extra) => b ? '<div class="lv-cell" data-col="' + b.id + '"' + (extra || '') + '>' + inner + '</div>' : '<div class="lv-gap"></div>';
+    const tot = { users: BPS.reduce((x, b) => x + per[b.id].users, 0), agents: BPS.reduce((x, b) => x + per[b.id].agents.length, 0), data: M.plats.length };
+
+    let h = '<div class="lv" id="lv" data-layer="' + esc(state.homeLayer) + '" style="--lv-cols:' + cols.join(' ') + '">';
+    // business unit header, grouped by tier
+    h += '<div class="lv-row lv-tiers"><div></div>' + tiers.map((t, i) => (i ? '<div></div>' : '') + '<div class="lv-tier" style="grid-column: span ' + BPS.filter((b) => b.tier === t).length + '">' + esc((TIERS[t] && TIERS[t].name) || 'Tier ' + t) + '</div>').join('') + '</div>';
+    h += '<div class="lv-row lv-bus"><div></div>' + order.map((b) => b ? '<button type="button" class="lv-bu" data-col="' + b.id + '" data-go="' + b.id + '" data-tt="' + esc(b.name) + '"><b>' + esc(b.code) + '</b><span>' + b.name.split('-to-').map(esc).join('<br>to ') + '</span></button>' : '<div class="lv-gap"></div>').join('') + '</div>';
+
+    // users
+    h += '<div class="lv-row lv-band lv-users" data-band="users"><div class="lv-lab">' + icon('users') + '<b>Users</b><span>' + nf.format(tot.users) + ' people</span></div>' + order.map((b) => {
+      if (!b) return cell(null);
+      const roles = Object.entries(per[b.id].roles).filter(([, r]) => r.n > 0).sort((x, y) => y[1].n - x[1].n);
+      return cell(b, '<div class="lv-grps">' + roles.map(([role, r]) => { const d = Math.round(8 + 26 * Math.sqrt(r.n / maxRole)); return '<i class="lv-grp" data-k="u|' + b.id + '|' + esc(role) + '" style="width:' + d + 'px;height:' + d + 'px" data-tt="' + esc(b.name + '\n' + role + ': ' + nf.format(r.n) + ' people, using ' + r.agents.size + ' ' + plural(r.agents.size, 'agent')) + '"></i>'; }).join('') + '</div><span class="lv-n">' + nf.format(per[b.id].users) + '</span>');
+    }).join('') + '</div>';
+
+    // agents
+    h += '<div class="lv-row lv-band lv-agents" data-band="agents"><div class="lv-lab">' + icon('automation') + '<b>Agents</b><span>' + nf.format(tot.agents) + ' agents</span></div>' + order.map((b) => {
+      if (!b) return cell(null);
+      const ags = per[b.id].agents.slice().sort((x, y) => calc(y).rpd - calc(x).rpd);
+      return cell(b, '<div class="lv-ags">' + ags.map((a) => '<button type="button" class="lv-ag' + (a.health === 'degraded' || a.health === 'incident' ? ' ' + a.health : '') + (a.status !== 'production' ? ' np' : '') + (calc(a).crossWrite.length ? ' xw' : '') + '" data-agent="' + esc(a.id) + '" data-k="a|' + esc(a.id) + '" data-tt="' + esc(a.name + '\n' + ARCH[a.arch].label + ', ' + AUTONOMY[a.auto].label.toLowerCase() + (a.health === 'degraded' || a.health === 'incident' ? '\n' + HEALTH[a.health] : '') + (calc(a).crossWrite.length ? '\nWrites into ' + calc(a).crossWrite.map((x) => BP[x].code).join(', ') : '')) + '">' + spriteEl(a, 18) + '</button>').join('') + '</div><span class="lv-n">' + ags.length + '</span>');
+    }).join('') + '</div>';
+
+    // data
+    h += '<div class="lv-row lv-band lv-data" data-band="data"><div class="lv-lab">' + icon('data') + '<b>Data</b><span>' + nf.format(tot.data) + ' systems</span></div>' + order.map((b) => {
+      if (!b) return cell(null);
+      const sys = Object.entries(per[b.id].sys).sort((x, y) => y[1].agents.size - x[1].agents.size || x[0].localeCompare(y[0]));
+      return cell(b, '<div class="lv-sys">' + sys.map(([name, sy]) => { const n = sy.agents.size; return '<i class="lv-db c' + (n >= 4 ? 3 : n >= 2 ? 2 : 1) + (sy.w.size ? ' w' : '') + '" data-k="d|' + b.id + '|' + esc(name) + '" data-tt="' + esc(name + ' in ' + b.name + '\n' + n + ' ' + plural(n, 'agent') + ' ' + plural(n, 'touches', 'touch') + ' it' + (sy.w.size ? ', ' + sy.w.size + ' ' + plural(sy.w.size, 'writes', 'write') + ' to it' : ', reads only')) + '">' + esc(sysAbbr(name)) + '</i>'; }).join('') + '</div><span class="lv-n">' + sys.length + '</span>');
+    }).join('') + '</div>';
+    return h + '<svg class="lv-links" aria-hidden="true"><g class="lv-paths"></g><g class="lv-pts"></g></svg></div>';
+  }
+
+  function bindLayers() {
+    if (STACK) { STACK.stop(); STACK = null; }
+    const box = $('#lv'); if (!box) return;
+    const svg = box.querySelector('.lv-links'); const gP = svg.querySelector('.lv-paths'); const gT = svg.querySelector('.lv-pts');
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = {}; box.querySelectorAll('[data-k]').forEach((e) => { el[e.dataset.k] = e; });
+    // one link per agent and endpoint; a link writes if any row behind it writes
+    const L = {};
+    const link = (a, k, kind, w, cols) => { if (!el[k]) return; const id = a.id + '>' + k; const l = L[id] || (L[id] = { a: a.id, k, kind, w: false, cols }); if (w) l.w = true; };
+    AGENTS.filter(lifecycleOk).forEach((a) => {
+      const rows = [].concat(a.inputs.map((x) => [x.bp, x.system, x.mode]), a.tools.map((x) => [x.bp, x.system, x.mode]), a.outputs.map((x) => [x.bp, x.dest, x.mode]));
+      rows.forEach(([bp, sys, m]) => link(a, 'd|' + bp + '|' + platformOf(sys), 'd', m === 'w', [a.home, bp]));
+      a.users.forEach((u) => { if (u.n > 0) link(a, 'u|' + u.bp + '|' + u.role, 'u', false, [a.home, u.bp]); });
+    });
+    const links = Object.values(L);
+    let paths = [];
+    const layout = () => {
+      const R = box.getBoundingClientRect(); svg.setAttribute('viewBox', '0 0 ' + R.width + ' ' + R.height); svg.setAttribute('width', R.width); svg.setAttribute('height', R.height);
+      const c = (e, edge) => { const r = e.getBoundingClientRect(); return { x: r.left - R.left + r.width / 2, y: edge === 'top' ? r.top - R.top : edge === 'bottom' ? r.bottom - R.top : r.top - R.top + r.height / 2 }; };
+      gP.innerHTML = ''; paths = [];
+      links.slice().sort((x, y) => x.w - y.w).forEach((l) => {
+        const ag = el['a|' + l.a]; const tg = el[l.k]; if (!ag || !tg) return;
+        const p1 = l.kind === 'd' ? c(ag, 'bottom') : c(ag, 'top'); const p2 = l.kind === 'd' ? c(tg, 'top') : c(tg, 'bottom');
+        const my = (p1.y + p2.y) / 2;
+        const p = document.createElementNS(NS, 'path');
+        p.setAttribute('d', 'M' + p1.x.toFixed(1) + ' ' + p1.y.toFixed(1) + ' C' + p1.x.toFixed(1) + ' ' + my.toFixed(1) + ' ' + p2.x.toFixed(1) + ' ' + my.toFixed(1) + ' ' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1));
+        p.setAttribute('class', 'lk ' + (l.kind === 'd' ? 'lk-d' : 'lk-u') + (l.w ? ' w' : '') + (l.cols[0] !== l.cols[1] ? ' x' : ''));
+        p.dataset.a = l.a; p.dataset.cols = l.cols.join(' ');
+        gP.appendChild(p); paths.push({ el: p, l, len: p.getTotalLength() });
+      });
+    };
+    layout();
+    // hover: a business unit column or a single agent
+    const setFocus = (col, ag) => {
+      const key = (col || '') + '|' + (ag || ''); if (box._f === key) return; box._f = key;
+      box.classList.toggle('focus', !!(col || ag));
+      box.querySelectorAll('[data-col]').forEach((e) => e.classList.toggle('on', !!col && e.dataset.col === col));
+      paths.forEach((p) => p.el.classList.toggle('on', (!!col && p.l.cols.includes(col)) || (!!ag && p.l.a === ag)));
+      box.querySelectorAll('.lv-ag').forEach((e) => e.classList.toggle('on', !!ag && e.dataset.agent === ag));
+      box._focus = { col, ag };
+    };
+    box.addEventListener('mouseover', (e) => { const a = e.target.closest('.lv-ag'); const c = e.target.closest('[data-col]'); setFocus(a ? null : c && c.dataset.col, a && a.dataset.agent); });
+    box.addEventListener('mouseleave', () => setFocus(null, null));
+    const ro = 'ResizeObserver' in window ? new ResizeObserver(() => { layout(); }) : null; if (ro) ro.observe(box);
+
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let raf = 0; let io = null;
+    if (!reduce) {
+      const live = []; let last = performance.now(); let visible = true;
+      io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => { visible = es[0].isIntersecting; }) : null; if (io) io.observe(box);
+      const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+      const acc = new Map();
+      const tick = (now) => {
+        raf = requestAnimationFrame(tick);
+        if (!visible || document.hidden) { last = now; return; }
+        const dt = Math.min(0.1, (now - last) / 1000); last = now;
+        const f = box._focus || {}; const layer = box.dataset.layer;
+        const pool = paths.filter((p) => (!f.col || p.l.cols.includes(f.col)) && (!f.ag || p.l.a === f.ag) && (layer === 'all' || layer === 'agents' || (layer === 'data' ? p.l.kind === 'd' : p.l.kind === 'u')));
+        const rate = (f.col || f.ag ? 7 : 16) / Math.max(1, pool.length);
+        pool.forEach((p) => { let v = (acc.get(p) || Math.random()) + rate * dt * (p.l.w ? 1.8 : 1); while (v >= 1) { v -= 1; if (live.length < 120) { const ci = document.createElementNS(NS, 'circle'); ci.setAttribute('r', p.l.w ? 2.8 : 2.2); ci.setAttribute('class', 'pt' + (p.l.w ? ' w' : '')); gT.appendChild(ci); live.push({ ci, p, t0: now, dur: 1.4 + p.len / 420 }); } } acc.set(p, v); });
+        for (let i = live.length - 1; i >= 0; i--) {
+          const q = live[i]; const k = (now - q.t0) / (q.dur * 1000);
+          if (k >= 1 || !q.p.el.isConnected) { q.ci.remove(); live.splice(i, 1); continue; }
+          // reads and people flow toward the agent's users or from data up to the agent; writes flow down into data
+          const toAgent = q.p.l.kind === 'd' && !q.p.l.w; const e = ease(k);
+          const pt = q.p.el.getPointAtLength((toAgent ? 1 - e : e) * q.p.len);
+          q.ci.setAttribute('cx', pt.x.toFixed(1)); q.ci.setAttribute('cy', pt.y.toFixed(1)); q.ci.setAttribute('opacity', Math.min(1, k * 6, (1 - k) * 6).toFixed(2));
+        }
+      };
+      raf = requestAnimationFrame(tick);
+    }
+    STACK = { stop() { cancelAnimationFrame(raf); if (io) io.disconnect(); if (ro) ro.disconnect(); } };
+  }
+  // ---- one view: each business unit is a zone holding its people (dots), its systems (tiles on a data pool) and its
+  // agents (sprites circling the pool). Agents fly to the exact system they use in another unit: a write carries a
+  // tangerine dot out and drops it in; a read picks up a navy dot and carries it home. Busier agents travel more often.
+  const ONE = { VW: 1100, VH: 600, M: 10, G: 12, TW: 18, TH: 14, SX: 21, SY: 17, rows: [{ t: 3, y: 8, h: 140 }, { t: 1, y: 172, h: 200 }, { t: 2, y: 396, h: 196 }] };
+  const bpRpd = (M, id) => M.per[id].agents.reduce((x, a) => x + (hasTel(a) ? calc(a).rpd : 0), 0);
+  function oneZones(M) {
+    const Z = {};
+    ONE.rows.forEach((r) => {
+      const row = BPS.filter((b) => b.tier === r.t); const n = row.length || 1;
+      const avail = ONE.VW - 2 * ONE.M - ONE.G * (n - 1);
+      const minW = Math.min(avail / n, r.t === 3 ? 170 : 104);
+      // busier units get wider zones
+      const wt = row.map((b) => Math.sqrt(bpRpd(M, b.id)) + 1); const tot = wt.reduce((x, y) => x + y, 0) || 1;
+      let x = ONE.M;
+      row.forEach((b, i) => { const w = minW + ((avail - n * minW) * wt[i]) / tot; Z[b.id] = { x, y: r.y, w, h: r.h, cx: x + w / 2, cy: r.y + r.h * 0.62 }; x += w + ONE.G; });
+    });
+    // systems as tiles on the pool, and the orbit the unit's agents circle on
+    BPS.forEach((b) => {
+      const z = Z[b.id]; const sys = Object.entries(M.per[b.id].sys).sort((x, y) => y[1].agents.size - x[1].agents.size || x[0].localeCompare(y[0]));
+      const n = sys.length; const cols = Math.max(1, Math.min(n, Math.ceil(Math.sqrt(n * 1.8)), Math.floor((z.w - 40) / ONE.SX))); const rows = Math.ceil(n / cols) || 0;
+      z.tiles = sys.map(([name, sy], i) => { const r = Math.floor(i / cols), c = i % cols; const inRow = Math.min(cols, n - r * cols);
+        return { name, sy, x: z.cx + (c - (inRow - 1) / 2) * ONE.SX, y: z.cy + (r - (rows - 1) / 2) * ONE.SY }; });
+      z.prx = n ? (cols * ONE.SX) / 2 + 14 : 10; z.pry = n ? (rows * ONE.SY) / 2 + 9 : 4;
+      z.orx = Math.min(z.w / 2 - 14, z.prx + 16); z.ory = Math.max(14, Math.min(z.pry + 15, z.cy - (z.y + 62), z.y + z.h - 14 - z.cy));
+    });
+    return Z;
+  }
+  function spriteUrl(a) {
+    const cv = document.createElement('canvas'); cv.width = 16; cv.height = 16; cv.dataset.sprite = a.id;
+    try { drawSprite(cv); return cv.toDataURL(); } catch (e) { return ''; }
+  }
+  function oneHtml(M) {
+    const Z = oneZones(M); const { per } = M;
+    const r1 = (n) => Math.round(n * 10) / 10;
+    const fit = (t, w) => { const k = Math.floor((w - 20) / 6.3); return t.length > k ? t.slice(0, Math.max(3, k - 1)) + '…' : t; };
+    let s = '<svg class="one" id="one" data-layer="' + esc(state.homeLayer) + '" viewBox="0 0 ' + ONE.VW + ' ' + ONE.VH + '" role="img" aria-labelledby="one-t">' +
+      '<title id="one-t">Every business unit with its people, systems and agents. Agents travel to the systems they use in other units; tangerine trips write.</title>' +
+      '<defs><linearGradient id="og-z1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".075"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".02"/></linearGradient>' +
+      '<linearGradient id="og-z2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".06"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".015"/></linearGradient>' +
+      '<linearGradient id="og-z3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".06"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".01"/></linearGradient>' +
+      '<radialGradient id="og-pool" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#C6F24E" stop-opacity=".22"/><stop offset=".7" stop-color="#C6F24E" stop-opacity=".06"/><stop offset="1" stop-color="#C6F24E" stop-opacity="0"/></radialGradient>' +
+      '<filter id="of-zone" x="-15%" y="-15%" width="130%" height="150%"><feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#000000" flood-opacity=".55"/></filter>' +
+      '<filter id="of-tok" x="-60%" y="-60%" width="220%" height="240%"><feDropShadow dx="0" dy="2" stdDeviation="1.6" flood-color="#000000" flood-opacity=".6"/></filter>' +
+      '<filter id="of-lift" x="-80%" y="-80%" width="260%" height="300%"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#C6F24E" flood-opacity=".55"/></filter>' +
+      '<filter id="of-glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' +
+      '<pattern id="og-grid" width="44" height="44" patternUnits="userSpaceOnUse"><path d="M44 0H0V44" fill="none" stroke="#FFFFFF" stroke-opacity=".035"/></pattern></defs>' +
+      '<rect class="o-floor" x="-200" y="-200" width="' + (ONE.VW + 400) + '" height="' + (ONE.VH + 400) + '" fill="url(#og-grid)"/>';
+    const core = ONE.rows[1]; const coreB = BPS.filter((b) => b.tier === 1);
+    s += '<g class="o-flow"><rect x="' + ONE.M + '" y="' + (core.y + core.h / 2 - 22) + '" width="' + (ONE.VW - 2 * ONE.M) + '" height="44" rx="22"/>';
+    for (let i = 0; i < coreB.length - 1; i++) { const z = Z[coreB[i].id]; const x = z.x + z.w + ONE.G / 2; const y = core.y + core.h / 2; s += '<path d="M' + r1(x - 3) + ' ' + (y - 5) + 'l5 5-5 5"/>'; }
+    s += '</g>';
+    BPS.forEach((b) => {
+      const z = Z[b.id]; const p = per[b.id]; const rpd = bpRpd(M, b.id);
+      const tip = b.name + '\n' + nf.format(p.users) + ' people, ' + p.agents.length + ' ' + plural(p.agents.length, 'agent') + ', ' + z.tiles.length + ' ' + plural(z.tiles.length, 'system') +
+        (rpd ? '\nAbout ' + nf.format(roundTo(rpd)) + ' API requests a day' : '') + (p.outW ? '\n' + p.outW + ' of its agents write into other units' : '');
+      s += '<g class="o-zone t' + b.tier + '" data-p="' + b.id + '">' +
+        '<rect class="o-box" x="' + r1(z.x) + '" y="' + z.y + '" width="' + r1(z.w) + '" height="' + z.h + '" rx="10" fill="url(#og-z' + b.tier + ')" filter="url(#of-zone)" data-go="' + b.id + '" data-tt="' + esc(tip) + '"/>' +
+        '<text class="o-code" x="' + r1(z.x + 10) + '" y="' + (z.y + 19) + '">' + esc(b.code) + '</text><text class="o-name" x="' + r1(z.x + 10) + '" y="' + (z.y + 34) + '">' + esc(fit(b.name, z.w)) + '</text>' +
+        '<text class="o-pn" x="' + r1(z.x + z.w - 10) + '" y="' + (z.y + 19) + '" text-anchor="end">' + nf.format(p.users) + '</text>';
+      const cols = Math.max(4, Math.floor((z.w - 20) / 6)); const dots = Math.min(cols * 2, Math.max(p.users ? 1 : 0, Math.ceil(p.users / 8)));
+      s += '<g class="o-ppl">'; for (let i = 0; i < dots; i++) s += '<circle cx="' + r1(z.x + 12 + (i % cols) * 6) + '" cy="' + (z.y + 45 + Math.floor(i / cols) * 6) + '" r="2"/>'; s += '</g>';
+      s += '<g class="o-data"><ellipse class="o-pool-o" data-rx="' + r1(z.prx * 1.16) + '" data-ry="' + r1(z.pry * 1.22) + '" cx="' + r1(z.cx) + '" cy="' + r1(z.cy) + '" rx="' + r1(z.prx * 1.16) + '" ry="' + r1(z.pry * 1.22) + '"/>' +
+        '<ellipse class="o-pool" fill="url(#og-pool)" cx="' + r1(z.cx) + '" cy="' + r1(z.cy) + '" rx="' + r1(z.prx) + '" ry="' + r1(z.pry) + '"/>' +
+        z.tiles.map((t) => { const n = t.sy.agents.size; return '<g class="o-tile c' + (n >= 4 ? 3 : n >= 2 ? 2 : 1) + (t.sy.w.size ? ' w' : '') + '" data-k="' + esc(b.id + '|' + t.name) + '" data-tt="' + esc(t.name + ' in ' + b.name + '\n' + n + ' ' + plural(n, 'agent') + ' ' + plural(n, 'touches', 'touch') + ' it' + (t.sy.w.size ? ', ' + t.sy.w.size + ' ' + plural(t.sy.w.size, 'writes', 'write') + ' to it' : ', reads only')) + '">' +
+          '<rect x="' + r1(t.x - ONE.TW / 2) + '" y="' + r1(t.y - ONE.TH / 2) + '" width="' + ONE.TW + '" height="' + ONE.TH + '" rx="2.5"/><text x="' + r1(t.x) + '" y="' + r1(t.y + 3.2) + '">' + esc(sysAbbr(t.name)) + '</text></g>'; }).join('') + '</g></g>';
+    });
+    s += '<g class="o-trails"></g><g class="o-rips"></g><g class="o-toks">';
+    BPS.forEach((b) => per[b.id].agents.forEach((a) => {
+      const c = calc(a);
+      s += '<g class="o-tok' + (a.health === 'degraded' || a.health === 'incident' ? ' ' + a.health : '') + (a.status !== 'production' ? ' np' : '') + '" data-a="' + esc(a.id) + '" data-agent="' + esc(a.id) + '" data-tt="' + esc(a.name + '\n' + ARCH[a.arch].label + ', ' + AUTONOMY[a.auto].label.toLowerCase() + (hasTel(a) ? '\nAbout ' + nf.format(roundTo(c.rpd)) + ' API requests a day' : '') + (c.crossWrite.length ? '\nWrites into ' + c.crossWrite.map((x) => BP[x].code).join(', ') : '') + (c.cross.length > c.crossWrite.length ? '\nReads from ' + c.cross.filter((x) => !c.crossWrite.includes(x)).map((x) => BP[x].code).join(', ') : '')) + '">' +
+        '<rect x="-10" y="-10" width="20" height="20" rx="4"/><image x="-8" y="-8" width="16" height="16" data-sprite-img="' + esc(a.id) + '"/><circle class="o-carry" cx="9" cy="-9" r="3.6"/></g>';
+    }));
+    s += '</g></svg>';
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return s + '<div class="o-feed-w"><span class="hx-mono dim">last trips</span><ol class="o-feed" id="one-feed" aria-live="off">' + (reduce ? '<li>motion is off because your device asks for reduced motion; every crossing is drawn as a faint arc</li>' : '<li class="muted">agents are starting their rounds</li>') + '</ol></div>';
+  }
+
+  function bindOne() {
+    if (STACK) { STACK.stop(); STACK = null; }
+    const svg = $('#one'); if (!svg) return;
+    const NS = 'http://www.w3.org/2000/svg'; const M = STACK_MODEL; const Z = oneZones(M);
+    svg.querySelectorAll('[data-sprite-img]').forEach((im) => { const a = AG[im.dataset.spriteImg]; if (a) im.setAttribute('href', spriteUrl(a)); });
+    const tileEl = {}; svg.querySelectorAll('.o-tile').forEach((g) => { tileEl[g.dataset.k] = g; });
+    const tileAt = {}; BPS.forEach((b) => Z[b.id].tiles.forEach((t) => { tileAt[b.id + '|' + t.name] = t; }));
+    // every row that reaches a system in another unit is a possible trip; tools are weighted by their share of calls
+    const toks = Array.from(svg.querySelectorAll('.o-tok')).map((el) => {
+      const a = AG[el.dataset.a]; const z = Z[a.home];
+      const rows = [].concat(a.inputs.map((x) => ({ bp: x.bp, sys: platformOf(x.system), w: x.mode === 'w', wt: 1 })), a.tools.map((x) => ({ bp: x.bp, sys: platformOf(x.system), w: x.mode === 'w', wt: Math.max(0.3, x.w) })), a.outputs.map((x) => ({ bp: x.bp, sys: platformOf(x.dest), w: x.mode === 'w', wt: 1 })))
+        .filter((r) => r.bp !== a.home && tileAt[r.bp + '|' + r.sys]);
+      return { el, a, z, rows, wt: Math.sqrt(hasTel(a) ? calc(a).rpd : 0) + 2, carry: el.querySelector('.o-carry'), trip: null };
+    });
+    BPS.forEach((b) => { const zt = toks.filter((k) => k.a.home === b.id); zt.forEach((k, i) => { k.ph = (i / Math.max(1, zt.length)) * Math.PI * 2; }); });
+    const pools = Array.from(svg.querySelectorAll('.o-pool-o')).map((el, i) => ({ el, rx: +el.dataset.rx, ry: +el.dataset.ry, ph: i * 1.3 }));
+    const orbit = (k, t) => { const th = k.ph + t * 0.22; return { x: k.z.cx + k.z.orx * Math.cos(th), y: k.z.cy + k.z.ory * Math.sin(th) }; };
+    const place = (k, x, y) => k.el.setAttribute('transform', 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')' + (k.trip ? ' scale(1.25)' : ''));
+    const setCarry = (k, mode) => { k.carry.setAttribute('class', 'o-carry' + (mode ? ' on ' + mode : '')); };
+    const gTr = svg.querySelector('.o-trails'); const gRip = svg.querySelector('.o-rips');
+    const arcPath = (a, b) => { const mx = (a.x + b.x) / 2, my = Math.min(a.y, b.y) - 36 - Math.abs(b.x - a.x) * 0.12; return 'M' + a.x.toFixed(1) + ' ' + a.y.toFixed(1) + ' Q' + mx.toFixed(1) + ' ' + my.toFixed(1) + ' ' + b.x.toFixed(1) + ' ' + b.y.toFixed(1); };
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) {
+      toks.forEach((k) => { const p = orbit(k, 0); place(k, p.x, p.y); const seen = {}; k.rows.forEach((r) => { const key = r.bp + '|' + r.sys; if (seen[key] && !r.w) return; seen[key] = 1; const t = tileAt[key]; const d = document.createElementNS(NS, 'path'); d.setAttribute('d', arcPath(p, t)); d.setAttribute('class', 'o-trail still' + (r.w ? ' w' : '')); gTr.appendChild(d); }); });
+      return;
+    }
+    const feed = $('#one-feed'); const btn = $('#one-act');
+    const say = (k, r) => {
+      if (!feed) return; const first = feed.querySelector('.muted'); if (first) first.remove();
+      const li = document.createElement('li'); li.dataset.agent = k.a.id; if (r.w) li.className = 'w';
+      li.innerHTML = '<span class="ts">' + new Date().toTimeString().slice(0, 8) + '</span><b>' + esc(k.a.name.toLowerCase()) + '</b>' + (r.w ? '<span class="vw">' + icon('write', 'mini') + 'wrote to</span>' : '<span class="vr">read from</span>') + '<span>' + esc(r.sys.toLowerCase()) + ' in ' + esc(BP[r.bp].code.toLowerCase()) + '</span>';
+      feed.insertBefore(li, feed.firstChild); while (feed.children.length > 4) feed.lastChild.remove();
+    };
+    let raf = 0; let visible = true; let lastNow = performance.now(); let clock = 0; let nextTrip = 0.3; let paused = false; const rips = [];
+    const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => { visible = es[0].isIntersecting; }) : null; if (io) io.observe(svg);
+    const OUT = 1.7, STAY = 1.1, BACK = 1.6;
+    const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+    const pickW = (arr, f) => { const tot = arr.reduce((x, o) => x + f(o), 0); let r = Math.random() * tot; for (const o of arr) { r -= f(o); if (r <= 0) return o; } return arr[arr.length - 1]; };
+    const startTrip = (k, t) => {
+      const r = pickW(k.rows, (x) => x.wt * (x.w ? 1.4 : 1)); const tile = tileAt[r.bp + '|' + r.sys];
+      const a = orbit(k, t); const b = { x: tile.x, y: tile.y - 13 };
+      const d = document.createElementNS(NS, 'path'); d.setAttribute('d', arcPath(a, b)); d.setAttribute('class', 'o-trail' + (r.w ? ' w' : '')); gTr.appendChild(d);
+      k.trip = { t0: t, r, tile, el: tileEl[r.bp + '|' + r.sys], path: d, len: d.getTotalLength(), hit: false };
+      k.el.classList.add('away'); setCarry(k, r.w ? 'w' : '');
+    };
+    const tick = (now) => {
+      raf = requestAnimationFrame(tick);
+      const dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
+      if (!visible || document.hidden || paused) return;
+      clock += dt; const t = clock; const f = svg._focus;
+      if (t > nextTrip) {
+        nextTrip = t + 0.4 + Math.random() * 0.5;
+        const away = toks.filter((k) => k.trip).length;
+        const cand = toks.filter((k) => !k.trip && k.rows.length && (!f || k.a.home === f || k.rows.some((r) => r.bp === f)));
+        if (away < 8 && cand.length) startTrip(pickW(cand, (k) => k.wt), t);
+      }
+      toks.forEach((k) => {
+        if (!k.trip) { const p = orbit(k, t); place(k, p.x, p.y); return; }
+        const tr = k.trip; const el = t - tr.t0;
+        if (el < OUT) { const pt = tr.path.getPointAtLength(ease(el / OUT) * tr.len); place(k, pt.x, pt.y); }
+        else if (el < OUT + STAY) {
+          if (!tr.hit) {
+            tr.hit = true; say(k, tr.r); setCarry(k, tr.r.w ? '' : 'r');
+            if (tr.el) tr.el.classList.add(tr.r.w ? 'hit-w' : 'hit');
+            const e = document.createElementNS(NS, 'ellipse'); e.setAttribute('cx', tr.tile.x); e.setAttribute('cy', tr.tile.y); e.setAttribute('class', 'o-rip' + (tr.r.w ? ' w' : '')); gRip.appendChild(e); rips.push({ e, t0: t });
+          }
+          const th = (el - OUT) * 3; place(k, tr.tile.x + 12 * Math.cos(th), tr.tile.y - 13 + 4 * Math.sin(th));
+        } else if (el < OUT + STAY + BACK) {
+          if (tr.el) tr.el.classList.remove('hit', 'hit-w');
+          const pt = tr.path.getPointAtLength((1 - ease((el - OUT - STAY) / BACK)) * tr.len); place(k, pt.x, pt.y); tr.path.style.opacity = Math.max(0.1, 1 - (el - OUT - STAY) / BACK);
+        } else { tr.path.remove(); k.trip = null; k.el.classList.remove('away'); setCarry(k, ''); const p = orbit(k, t); place(k, p.x, p.y); }
+      });
+      for (let i = rips.length - 1; i >= 0; i--) { const q = rips[i]; const k = (t - q.t0) / 1.1; if (k >= 1) { q.e.remove(); rips.splice(i, 1); continue; } q.e.setAttribute('rx', (9 + 26 * k).toFixed(1)); q.e.setAttribute('ry', (7 + 12 * k).toFixed(1)); q.e.style.opacity = (1 - k).toFixed(2); }
+      pools.forEach((pl) => { const m = 1 + 0.06 * Math.sin(t * 1.8 + pl.ph); pl.el.setAttribute('rx', (pl.rx * m).toFixed(1)); pl.el.setAttribute('ry', (pl.ry * m).toFixed(1)); });
+    };
+    raf = requestAnimationFrame(tick);
+    const zones = Array.from(svg.querySelectorAll('.o-zone'));
+    svg.addEventListener('mouseover', (e) => { const g = e.target.closest('.o-zone'); const id = g ? g.dataset.p : null; if (svg._focus === id) return; svg._focus = id; svg.classList.toggle('focus', !!id); zones.forEach((z) => z.classList.toggle('on', z.dataset.p === id)); });
+    svg.addEventListener('mouseleave', () => { svg._focus = null; svg.classList.remove('focus'); zones.forEach((z) => z.classList.remove('on')); });
+    const stageEl = $('#o-3d');
+    if (stageEl) {
+      stageEl.addEventListener('mousemove', (e) => { const r = stageEl.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5; svg.style.setProperty('--ry', (x * 4).toFixed(2) + 'deg'); svg.style.setProperty('--rx', (9 + y * 4).toFixed(2) + 'deg'); });
+      stageEl.addEventListener('mouseleave', () => { svg.style.removeProperty('--ry'); svg.style.removeProperty('--rx'); });
+    }
+    const setPaused = (v) => { paused = v; svg.classList.toggle('paused', v); if (btn) { btn.setAttribute('aria-pressed', String(!v)); btn.classList.toggle('off', v); btn.lastChild.textContent = v ? 'Paused' : 'Live'; btn.title = v ? 'Resume the motion' : 'Pause the motion'; } };
+    setPaused(false);
+    STACK = { stop() { cancelAnimationFrame(raf); if (io) io.disconnect(); }, toggle() { setPaused(!paused); } };
+  }
+
+  // the "i" legend at the top of the home visual, written for whichever draft is showing
+  function homeLegend(d) {
+    const sw = (inner, w) => '<svg class="lg-sw" viewBox="0 0 ' + (w || 28) + ' 20" width="' + (w || 28) + '" height="20" aria-hidden="true">' + inner + '</svg>';
+    const item = (svg, title, text) => '<li>' + svg + '<span><b>' + title + '</b> ' + text + '</span></li>';
+    const tile = (cls, t) => sw('<rect class="lg-tile ' + cls + '" x="5" y="3" width="18" height="14" rx="2.5"/><text class="lg-tt ' + cls + '" x="14" y="13.3">' + t + '</text>');
+    if (d === 3) {
+      return '<h3>How to read this view</h3><p class="hinfo-lead">Every business unit is a zone holding its people, its systems and its agents. Agents travel to the systems they use in other units, so the motion is the data moving.</p><div class="lg-cols"><div>' +
+        '<h4>Business units</h4><ul>' +
+        item(sw('<rect class="lg-zone" x="2" y="2" width="24" height="16" rx="4"/>'), 'Zone.', 'One business unit. Wider zones handle more API requests a day.') +
+        item(sw('<path class="lg-chev" d="M8 5l5 5-5 5M15 5l5 5-5 5"/>'), 'Flow.', 'The middle row is the core value chain, left to right. Governance sits above it, enabling functions below.') +
+        item(sw('<circle class="lg-ppl" cx="7" cy="10" r="2"/><circle class="lg-ppl" cx="13" cy="10" r="2"/><circle class="lg-ppl" cx="19" cy="10" r="2"/>'), 'People.', 'About one dot per eight people who use agents there. The number is the total.') +
+        '</ul><h4>Data</h4><ul>' +
+        item(tile('c1', 'S4'), 'System.', 'Two-letter code for a source system, such as S4 for SAP S/4HANA. Hover for the full name.') +
+        item(tile('c2', 'BQ'), 'Shared.', 'Two or three agents use it.') +
+        item(tile('c3', 'S4'), 'Hot spot.', 'Four or more agents use it.') +
+        item(tile('c1 w', 'SN'), 'Written to.', 'Tangerine edge: at least one agent writes to it.') +
+        '</ul></div><div><h4>Agents</h4><ul>' +
+        item(sw('<rect class="lg-tok" x="6" y="2" width="16" height="16" rx="3.5"/>'), 'Agent.', 'Its own sprite, circling its home systems. Select one to open it.') +
+        item(sw('<rect class="lg-tok deg" x="6" y="2" width="16" height="16" rx="3.5"/>'), 'Degraded.', 'Tangerine ring. A crimson ring means an incident.') +
+        '</ul><h4>Movement</h4><ul>' +
+        item(sw('<path class="lg-trail" d="M2 16 Q14 0 26 16"/><circle class="lg-dot r" cx="20" cy="9" r="3"/>'), 'Read.', 'Dashed trip to a system in another unit; the agent carries a navy dot of data home.') +
+        item(sw('<path class="lg-trail w" d="M2 16 Q14 0 26 16"/><circle class="lg-dot w" cx="20" cy="9" r="3"/>'), 'Write.', 'Tangerine trip; the agent drops data into the system, which flashes and ripples.') +
+        item(sw('<rect class="lg-act" x="1" y="3" width="26" height="14" rx="3"/><circle class="lg-beat" cx="8" cy="10" r="2.5"/>'), 'Active.', 'Busier agents travel more often. Select Active to pause, again to resume. The feed below lists the latest trips.') +
+        '</ul><h4>Interact</h4><p class="hinfo-p">Hover a zone to see only its traffic. Use the layer buttons to fade people, agents or data. Sample data, not live telemetry.</p></div></div>';
+    }
+    if (d === 2) {
+      return '<h3>How to read the deep dive</h3><p class="hinfo-lead">Three bands, one column per business unit: people on top, agents in the middle, systems at the base. Curves join each agent to the systems it uses and the people it serves.</p><div class="lg-cols"><div><ul>' +
+        item(sw('<circle class="lg-grp" cx="14" cy="10" r="6"/>'), 'User group.', 'Sized by people.') +
+        item(tile('c1', 'BQ'), 'System.', 'Darker when more agents touch it; tangerine edge when one writes to it.') +
+        '</ul></div><div><ul>' +
+        item(sw('<path class="lg-trail solid" d="M2 16 Q14 0 26 16"/>'), 'Reads.', 'Navy curve.') +
+        item(sw('<path class="lg-trail w solid" d="M2 16 Q14 0 26 16"/>'), 'Writes.', 'Tangerine curve. Hover a unit or an agent to trace its curves.') +
+        '</ul></div></div>';
+    }
+    return '<h3>How to read draft 1</h3><p class="hinfo-lead">Three stacked planes, people on top, agents in the middle, data at the base. A process keeps the same spot on every plane.</p><ul>' +
+      item(sw('<rect class="lg-tok" x="9" y="5" width="10" height="10" rx="2"/>'), 'Agent.', 'One square per agent.') +
+      item(sw('<ellipse class="lg-pool" cx="14" cy="10" rx="11" ry="5"/>'), 'Data.', 'Larger where more agents touch it.') +
+      item(sw('<path class="lg-trail w solid" d="M2 16 Q14 0 26 16"/>'), 'Writes.', 'Tangerine arcs write into another process; navy arcs read.') + '</ul>';
+  }
+  function bindHome() { if (state.homeDraft === 1) bindStack(); else if (state.homeDraft === 2) bindLayers(); else bindOne(); }
+
+  // ---- home page: a dark executive briefing. Hero and live map first, then one section per question a CXO asks.
+  const hxNum = (v, fmt) => {
+    const f = (x) => hxFmt(x, fmt);
+    return '<span class="hx-num" data-count="' + v + '" data-fmt="' + fmt + '">' + f(v) + '</span>';
+  };
+  const hxFmt = (x, fmt) => fmt === 'money' ? '$' + nf.format(Math.round(x)) : fmt === 'cmoney' ? '$' + compact(x) : fmt === 'pct' ? Math.round(x) + '%' : fmt === 'k' ? compact(x) : nf.format(Math.round(x));
+  const hxPill = (t, cls) => '<span class="hx-pill' + (cls ? ' ' + cls : '') + '"><i></i>' + esc(t) + '</span>';
+  const hxH2 = (a, em, b) => '<h2 class="hx-h2">' + esc(a) + '<em>' + esc(em) + '</em>' + esc(b || '') + '</h2>';
+  const hxHead = (kick, a, em, b, side) => '<div class="hx-head rv">' + '<div>' + hxPill(kick) + hxH2(a, em, b) + '</div>' + (side ? '<p class="hx-side">' + esc(side) + '</p>' : '') + '</div>';
+  const dayLbl = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).toLowerCase();
+
+  function hxMark() {
+    const rows = ['......aa......', '.......a......', '...aaaaaaaa...', '...a.aaaa.a...', '...aaaaaaaa...', '...aa....aa...', '...aaaaaaaa...', '.....aaaa.....', '....aaaaaa....'];
+    let r = ''; rows.forEach((row, y) => { for (let i = 0; i < row.length; i++) if (row[i] === 'a') r += '<rect x="' + (i + 1) + '" y="' + (y + 3) + '" width="1" height="1"/>'; });
+    return '<svg viewBox="0 0 16 16" width="28" height="28" shape-rendering="crispEdges">' + r + '</svg>';
+  }
+  function isoBars(items, fmt) {
+    // isometric prisms, tallest one lit; heights animate in when the section is revealed
+    const W = 360, H = 236, base = 204, bw = 34, dx = 12, dy = 7; const max = Math.max(1, ...items.map((x) => x.v));
+    const gap = (W - 40 - items.length * bw) / Math.max(1, items.length - 1);
+    let s = '<svg class="hx-iso" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(items.map((x) => x.label + ' ' + hxFmt(x.v, fmt)).join(', ')) + '">';
+    items.forEach((x, i) => {
+      const h = Math.max(6, (x.v / max) * 156); const x0 = 20 + i * (bw + gap); const top = base - h; const hot = x.v === max;
+      s += '<g class="iso' + (hot ? ' hot' : '') + '" style="--d:' + (i * 70) + 'ms">' +
+        '<polygon class="f" points="' + [x0, top + dy, x0 + bw - dx, top + dy, x0 + bw - dx, base, x0, base].join(' ') + '"/>' +
+        '<polygon class="s" points="' + [x0 + bw - dx, top + dy, x0 + bw, top, x0 + bw, base - dy, x0 + bw - dx, base].join(' ') + '"/>' +
+        '<polygon class="t" points="' + [x0, top + dy, x0 + dx, top, x0 + bw, top, x0 + bw - dx, top + dy].join(' ') + '"/>' +
+        '<text class="v" x="' + (x0 + bw / 2) + '" y="' + (top - 8) + '">' + esc(hxFmt(x.v, fmt)) + '</text>' +
+        '<text class="l" x="' + (x0 + (bw - dx) / 2) + '" y="' + (base + 20) + '">' + esc(x.label) + '</text></g>';
+    });
+    return s + '</svg>';
+  }
+  function sparkSvg(vals, cls) {
+    const W = 320, H = 64; const mx = Math.max(1, ...vals), mn = Math.min(...vals);
+    const pts = vals.map((v, i) => [(i / (vals.length - 1)) * W, H - 6 - ((v - mn) / ((mx - mn) || 1)) * (H - 14)]);
+    const last = pts[pts.length - 1];
+    return '<svg class="hx-spark ' + (cls || '') + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + pts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '"/><circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="3.5"/></svg>';
+  }
+
   function renderAll() {
     const list = AGENTS.filter(lifecycleOk);
-    const prod = list.filter((a) => a.status === 'production');
-    const sum = (arr, f) => arr.reduce((x, a) => x + f(calc(a)), 0);
-    const crossCount = list.filter((a) => calc(a).cross.length).length;
-    const writeCount = list.filter((a) => calc(a).crossWrite.length).length;
-    const prodCross = prod.filter((a) => calc(a).cross.length).length, prodWrite = prod.filter((a) => calc(a).crossWrite.length).length;
-    const lead = cap(word(prod.length)) + ' ' + plural(prod.length, 'agent') + ' ' + plural(prod.length, 'is', 'are') + ' in production across ' + BPS.length + ' business processes, handling about ' + nf.format(roundTo(sum(prod.filter(hasTel), (c) => c.rpd))) + ' API requests a day at an estimated ' + money(Math.round(sum(prod.filter(hasTel), (c) => c.total))) + ' over the last 30 days. ' + nf.format(prodCross) + ' of them reach beyond their home process, and ' + nf.format(prodWrite) + ' write into another one.';
-    let h = '<header class="bp-head solo"><div class="h1-row"><h1>All business processes</h1>' + addBtn('') + '</div>' +
-      '<p class="owner">' + esc(TENANT.name) + '. ' + esc(String(TENANT.note || '').replace(/\s*·\s*/g, ', ')) + '.</p>' +
-      '<p class="lead">' + esc(lead) + '</p></header>';
+    const M = homeModel(list); STACK_MODEL = M;
+    const n = list.length; const tel = list.filter(hasTel);
+    const lifeWord = state.lifecycle === 'all' ? '' : STATUS[state.lifecycle].toLowerCase() + ' ';
+    const issues = list.filter((a) => a.health === 'incident' || a.health === 'degraded').sort((x, y) => (x.health === 'incident' ? -1 : 1));
+    const inc = issues.filter((a) => a.health === 'incident').length, deg = issues.length - inc;
+    const statusTxt = issues.length ? [inc ? inc + ' ' + plural(inc, 'incident') : '', deg ? deg + ' degraded' : ''].filter(Boolean).join(', ') : 'all agents healthy';
+    const rpd = tel.reduce((x, a) => x + calc(a).rpd, 0);
+    const people = BPS.reduce((x, b) => x + M.per[b.id].users, 0);
+    const asOf = DAYS.length ? DAYS[DAYS.length - 1] : new Date();
 
-    // cross-process map: dot size = number of agents, tangerine = at least one of them writes
-    const m = {}; let max = 1;
-    list.forEach((a) => { const c = calc(a); Object.keys(c.touch).forEach((t) => { const k = a.home + '|' + t; (m[k] = m[k] || { n: 0, w: 0, names: [] }); m[k].n++; if (c.touch[t].write && t !== a.home) m[k].w++; m[k].names.push(a.name); if (t !== a.home) max = Math.max(max, m[k].n); }); });
-    const dotPx = (n) => Math.round(8 + 18 * Math.sqrt(n / max));
-    h += '<section class="sec"><div class="sec-h"><h2>Where agents cross process lines</h2></div>' +
-      '<p class="sec-sub">Each row is the process an agent calls home; each column is a process it touches. Select a dot to open that process.</p>' +
-      '<div class="map-legend"><span><i style="width:10px;height:10px"></i><i style="width:20px;height:20px"></i>More agents, larger dot</span><span><i class="w" style="width:14px;height:14px"></i>' + icon('write') + 'At least one writes into the column process</span><span><b style="font-weight:600;color:var(--color-ink)">n</b> on the diagonal: agents homed in that process</span></div>';
-    h += '<div class="hm-wrap"><table class="hm"><thead><tr><th class="hm-corner"><span>Home process</span></th>' + BPS.map((b) => '<th scope="col"><span class="hm-col" data-tt="' + esc(b.name) + '">' + esc(b.code) + '</span></th>').join('') + '</tr></thead><tbody>';
-    BPS.forEach((r) => {
-      h += '<tr><th scope="row"><button type="button" class="hm-row" data-go="' + r.id + '"><b>' + esc(r.code) + '</b><span class="hm-rn">' + esc(r.name) + '</span></button></th>';
-      BPS.forEach((c) => {
-        const cell = m[r.id + '|' + c.id];
-        if (r.id === c.id) { h += '<td class="hm-diag" data-tt="' + esc(r.name + ': ' + (cell ? cell.n : 0) + ' agents homed here') + '">' + (cell ? '<span>' + cell.n + '</span>' : '') + '</td>'; return; }
-        if (!cell) { h += '<td></td>'; return; }
-        const px = dotPx(cell.n);
-        h += '<td class="hm-c" data-go="' + c.id + '" data-tt="' + esc(cell.n + ' ' + plural(cell.n, 'agent') + ' homed in ' + r.name + ' ' + plural(cell.n, 'touches', 'touch') + ' ' + c.name + (cell.w ? '; ' + cell.w + ' ' + plural(cell.w, 'writes', 'write') + ' into it' : '') + ':\n' + cell.names.join('\n')) + '"><span class="hm-dot' + (cell.w ? ' w' : '') + '" style="width:' + px + 'px;height:' + px + 'px"></span><span class="sr">' + cell.n + '</span></td>';
-      });
-      h += '</tr>';
-    });
-    h += '</tbody></table></div></section>';
+    // ---- hero + live map
+    let h = '<div class="hx">' +
+      '<h1 class="sr">All business processes</h1>' +
+      '<section class="hx-hero"><div class="hx-hero-top rv">' + hxPill(n + ' ' + lifeWord + plural(n, 'agent') + ' / ' + BPS.length + ' business units / ' + M.plats.length + ' systems') +
+      '<span class="hx-status' + (inc ? ' bad' : deg ? ' warn' : '') + '"><i></i>' + esc(statusTxt) + '</span></div>' +
+      '<div class="hx-hero-main"><div class="rv"><h2 class="hx-h1">Every agent,<br><em>accounted for.</em></h2>' +
+      '<p class="hx-lead">Where each agent works, what it reaches into, what it can change and what it costs, across ' + esc(TENANT.name || 'the enterprise') + '.</p>' +
+      '<div class="hx-ctas"><a class="hx-btn lime" href="#hx-exposure" data-hscroll="hx-exposure">See what agents can change</a><button type="button" class="hx-btn ghost" data-hdraft="2">' + icon('chev', 'mini') + 'Open the deep dive</button></div>' +
+      '<p class="hx-mono">telemetry to ' + esc(dayLbl(asOf)) + ' / illustrative list prices / sample data</p></div>' +
+      '<div class="hx-kpis rv">' +
+        '<div><span class="hx-k">' + hxNum(rpd, 'k') + '</span><span class="hx-kl">API requests a day</span></div>' +
+        '<div><span class="hx-k">' + hxNum(people, 'int') + '</span><span class="hx-kl">people use them</span></div>' +
+        '<div><span class="hx-k">' + hxNum(list.filter((a) => calc(a).crossWrite.length).length, 'int') + '</span><span class="hx-kl">write into another unit</span></div></div></div>' +
+      '<div class="hx-map rv" id="hx-map"><div class="hx-map-h"><span class="hx-mono">' + (state.homeDraft === 2 ? 'deep dive' : 'live map') + ' / ' + BPS.length + ' units / ' + n + ' agents</span>' +
+        '<div class="hx-map-ctl"><div class="seg sm" role="group" aria-label="Visual">' + [[3, 'Live map'], [2, 'Deep dive']].map(([k, l]) => '<button type="button" class="seg-btn' + (state.homeDraft === k ? ' on' : '') + '" data-hdraft="' + k + '" aria-pressed="' + (state.homeDraft === k) + '">' + l + '</button>').join('') + '</div>' +
+        '<div class="seg sm" role="group" aria-label="Focus a layer">' + [['all', 'All'], ['users', 'People'], ['agents', 'Agents'], ['data', 'Data']].map(([k, l]) => '<button type="button" class="seg-btn' + (state.homeLayer === k ? ' on' : '') + '" data-hlayer="' + k + '" aria-pressed="' + (state.homeLayer === k) + '">' + l + '</button>').join('') + '</div>' +
+        (state.homeDraft === 2 ? '' : '<button type="button" class="hx-live" id="one-act" data-hlive aria-pressed="true"><i></i><span>Live</span></button>') +
+        '<details class="hinfo"><summary aria-label="What this visual shows" title="What this visual shows">' + icon('info') + '</summary><div class="hinfo-pop" role="dialog" aria-label="Legend">' + homeLegend(state.homeDraft === 2 ? 2 : 3) + '</div></details></div></div>' +
+        (state.homeDraft === 2 ? '<div class="lv-sheet">' + layersHtml(M) + '</div>' : '<div class="o-3d" id="o-3d">' + oneHtml(M) + '</div>') + '</div></section>';
 
-    // table
-    h += '<section class="sec"><div class="sec-h"><h2>By process</h2></div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Process</th><th class="num">Agents</th><th class="num">Requests a day</th><th class="num">Users, 30 days</th><th class="num">Spend, 30 days</th><th class="num" data-tt="Agents homed here that touch another process">Reach out</th><th class="num" data-tt="Agents from other processes that touch this one">Reach in</th></tr></thead><tbody>';
-    BPS.forEach((b) => {
-      const home = list.filter((a) => a.home === b.id); const hp = home.filter((a) => a.status === 'production');
-      const inn = list.filter((a) => a.home !== b.id && calc(a).touch[b.id]).length;
-      h += '<tr class="click" data-go="' + b.id + '"><td><b class="pc">' + esc(b.code) + '</b> <span class="pn">' + esc(b.name) + '</span>' + (b.featured ? ' <span class="tag">Detailed</span>' : '') + '</td><td class="num">' + home.length + '</td><td class="num">' + compact(sum(hp, (c) => c.rpd)) + '</td><td class="num">' + nf.format(sum(hp, (c) => c.users)) + '</td><td class="num">' + money(Math.round(sum(hp, (c) => c.total))) + '</td><td class="num">' + home.filter((a) => calc(a).cross.length).length + '</td><td class="num">' + inn + '</td></tr>';
+    // ---- exposure: who can change what another team owns
+    const writers = list.filter((a) => calc(a).crossWrite.length);
+    const autoN = list.filter((a) => a.auto === 3).length;
+    const wTools = list.reduce((x, a) => x.concat(a.tools.filter((t) => t.mode === 'w')), []); const wAppr = wTools.filter((t) => t.approval).length;
+    const apprPct = wTools.length ? (wAppr / wTools.length) * 100 : 0;
+    const inW = BPS.map((b) => ({ b, v: list.filter((a) => a.home !== b.id && calc(a).touch[b.id] && calc(a).touch[b.id].write).length }));
+    const maxIn = Math.max(1, ...inW.map((x) => x.v));
+    const riskRows = writers.slice().sort((x, y) => y.auto - x.auto || calc(y).crossWrite.length - calc(x).crossWrite.length || calc(y).rpd - calc(x).rpd).slice(0, 6);
+    h += '<section class="hx-sec" id="hx-exposure">' + hxHead('exposure', 'Where agents can ', 'change the books', '.', 'Agents that write outside their home unit can move money, stock or records another team owns. These are the ones a CXO should know by name.') +
+      '<div class="hx-stats rv">' +
+        '<div class="hx-stat"><span class="hx-ml">writers</span><span class="hx-big">' + hxNum(writers.length, 'int') + '</span><span class="hx-ml">agents write into another unit</span>' +
+          '<div class="hx-minis">' + inW.map((x) => '<i style="--h:' + Math.round((x.v / maxIn) * 100) + '%" data-tt="' + esc(x.b.name + ': ' + x.v + ' ' + plural(x.v, 'agent') + ' from other units ' + plural(x.v, 'writes', 'write') + ' into it') + '"></i>').join('') + '</div><span class="hx-tag">writes received, by unit</span></div>' +
+        '<div class="hx-stat"><span class="hx-ml">autonomy</span><span class="hx-big">' + hxNum(autoN, 'int') + '</span><span class="hx-ml">act without a person in the loop</span>' +
+          '<div class="hx-blocks">' + list.slice().sort((x, y) => y.auto - x.auto).map((a) => '<i class="a' + a.auto + '" data-tt="' + esc(a.name + ': ' + AUTONOMY[a.auto].label) + '"></i>').join('') + '</div><span class="hx-tag">one block per agent; lit is autonomous</span></div>' +
+        '<div class="hx-stat"><span class="hx-ml">approvals</span><span class="hx-big">' + hxNum(apprPct, 'pct') + '</span><span class="hx-ml">of write tools wait for a named approver</span>' +
+          '<div class="hx-track"><i style="--w:' + apprPct.toFixed(1) + '%"></i></div><span class="hx-tag">' + wAppr + ' of ' + wTools.length + ' write tools</span></div></div>' +
+      '<div class="hx-card hx-rows rv"><div class="hx-card-h"><span class="hx-mono">writers to know by name</span><span class="hx-mono dim">sorted by autonomy, then reach</span></div>' +
+        riskRows.map((a) => { const c = calc(a); const sys = Array.from(new Set(a.tools.filter((t) => t.mode === 'w' && t.bp !== a.home).map((t) => platformOf(t.system)).concat(a.outputs.filter((o) => o.mode === 'w' && o.bp !== a.home).map((o) => platformOf(o.dest))))).slice(0, 3);
+          return '<button type="button" class="hx-row" data-agent="' + esc(a.id) + '"><span class="pix sm">' + spriteEl(a, 26) + '</span><span class="hx-row-n"><b>' + esc(a.name) + '</b><span>' + esc(AUTONOMY[a.auto].label) + ', ' + esc(a.owner) + '</span></span>' +
+            '<span class="hx-row-x">' + chip(a.home) + '<span class="hx-into">into</span>' + c.crossWrite.map((x) => chip(x, { write: true })).join('') + '</span><span class="hx-row-s">' + esc(sys.join(' / ').toLowerCase()) + '</span></button>'; }).join('') + '</div></section>';
+
+    // ---- attention: incidents, degraded agents and recent changes
+    const recent = list.filter((a) => a.updated && (asOf - Date.parse(a.updated + 'T00:00:00Z')) / 864e5 <= 14).sort((x, y) => y.updated.localeCompare(x.updated)).slice(0, 5);
+    h += '<section class="hx-sec" id="hx-attn">' + hxHead('needs a look', 'What needs ', 'attention', ' today.', 'Incidents and degraded agents, with who owns them and what they touch. The console reports; the owning team fixes.') +
+      '<div class="hx-attn"><div class="hx-alerts">' + (issues.length ? issues.map((a) => { const c = calc(a);
+        return '<div class="hx-card hx-alert ' + a.health + ' rv"><div class="hx-card-h"><span class="hx-mono">#' + esc(BP[a.home].code.toLowerCase()) + '</span><span class="hx-mono dim">' + esc(HEALTH[a.health].toLowerCase()) + '</span></div>' +
+          '<div class="hx-alert-b"><span class="pix sm">' + spriteEl(a, 26) + '</span><div><b>' + esc(a.name) + '</b><p>' + esc(a.healthNote || HEALTH[a.health]) + '</p>' +
+          '<dl><dt>owner</dt><dd>' + esc(a.owner + (a.ownerTitle ? ', ' + a.ownerTitle : '')) + '</dd><dt>autonomy</dt><dd>' + esc(AUTONOMY[a.auto].label) + '</dd><dt>writes into</dt><dd>' + (c.crossWrite.length ? c.crossWrite.map((x) => esc(BP[x].name)).join(', ') : 'its own unit only') + '</dd><dt>people</dt><dd>' + nf.format(c.users) + '</dd></dl>' +
+          '<button type="button" class="hx-btn lime sm" data-agent="' + esc(a.id) + '">Open agent</button></div></div></div>'; }).join('')
+        : '<div class="hx-card hx-alert ok rv"><div class="hx-alert-b"><div><b>All agents healthy</b><p>No incidents or degraded agents in this view.</p></div></div></div>') + '</div>' +
+      '<div class="hx-card hx-changes rv"><div class="hx-card-h"><span class="hx-mono">changed in the last 14 days</span><span class="hx-mono dim">' + recent.length + '</span></div>' +
+        (recent.length ? recent.map((a) => '<button type="button" class="hx-chg" data-agent="' + esc(a.id) + '"><span class="hx-mono dim">' + esc(dayLbl(new Date(a.updated + 'T00:00:00Z'))) + '</span><b>' + esc(a.name) + '</b><span class="hx-mono">v' + esc(a.version) + '</span></button>').join('') : '<p class="hx-empty">No changes in the last two weeks.</p>') +
+        '<p class="hx-foot">A change to an agent that writes into another unit is the moment to check its approvals.</p></div></div></section>';
+
+    // ---- spend
+    const spendDaily = DAYS.map((_, i) => tel.reduce((x, a) => { const c = calc(a); return x + (c.req30 ? (c.series[i] || 0) / c.req30 * c.total : 0); }, 0));
+    const spend = tel.reduce((x, a) => x + calc(a).total, 0);
+    const req30 = tel.reduce((x, a) => x + calc(a).req30, 0);
+    const wk = (arr, from) => arr.slice(from, from + 7).reduce((x, y) => x + y, 0);
+    const chg = spendDaily.length >= 14 && wk(spendDaily, 0) ? Math.round(((wk(spendDaily, spendDaily.length - 7) - wk(spendDaily, 0)) / wk(spendDaily, 0)) * 100) : 0;
+    const byBp = BPS.map((b) => ({ b, v: M.per[b.id].agents.filter(hasTel).reduce((x, a) => x + calc(a).total, 0) })).sort((x, y) => y.v - x.v);
+    const top = byBp.slice(0, 7);
+    h += '<section class="hx-sec" id="hx-spend">' + hxHead('spend', 'What agents ', 'cost', ', and where.', 'Thirty days at illustrative list prices: model tokens, runtime and fees. Real invoices come from the BigQuery billing export.') +
+      '<div class="hx-stats rv">' +
+        '<div class="hx-stat"><span class="hx-ml">30 days</span><span class="hx-big">' + hxNum(spend, 'money') + '</span><span class="hx-ml">estimated spend, illustrative prices</span>' + sparkSvg(spendDaily.length > 1 ? spendDaily : [0, 0]) + '<span class="hx-tag">' + (Math.abs(chg) < 2 ? 'flat' : (chg > 0 ? 'up ' : 'down ') + Math.abs(chg) + '%') + ' first week to last</span></div>' +
+        '<div class="hx-stat"><span class="hx-ml">unit cost</span><span class="hx-big">' + (req30 ? '$' + (spend / req30 * 1000).toFixed(2) : '–') + '</span><span class="hx-ml">per 1,000 API requests</span><div class="hx-track"><i style="--w:' + (spend ? Math.min(100, (byBp[0].v / spend) * 100).toFixed(1) : 0) + '%"></i></div><span class="hx-tag">' + (byBp[0] && spend ? esc(byBp[0].b.name.toLowerCase()) + ' is ' + Math.round((byBp[0].v / spend) * 100) + '% of spend' : '') + '</span></div>' +
+        '<div class="hx-stat hx-iso-wrap"><span class="hx-ml">by unit, top seven</span>' + isoBars(top.map((x) => ({ label: x.b.code, v: x.v })), 'cmoney') + '</div></div></section>';
+
+    // ---- activity heatmap + hands-off ring
+    const grid = BPS.map((b) => ({ b, d: DAYS.map((_, i) => M.per[b.id].agents.filter(hasTel).reduce((x, a) => x + (calc(a).series[i] || 0), 0)) }));
+    const gmax = Math.max(1, ...grid.map((r) => Math.max(...r.d)));
+    const handsOff = rpd ? (tel.filter((a) => a.auto === 3).reduce((x, a) => x + calc(a).rpd, 0) / rpd) * 100 : 0;
+    const R = 46, C = 2 * Math.PI * R;
+    h += '<section class="hx-sec" id="hx-activity">' + hxHead('daily view', 'A month, ', 'seen from', ' the console.', 'Every row is a business unit, every cell a day. Brighter cells carry more API requests.') +
+      '<div class="hx-act"><div class="hx-card hx-heat rv"><div class="hx-card-h"><span class="hx-mono">last ' + DAYS.length + ' days, unit by unit</span><span class="hx-pill sm"><i></i>' + esc('telemetry to ' + dayLbl(asOf)) + '</span></div>' +
+        '<div class="hx-heat-g" style="--cols:' + DAYS.length + '">' + grid.map((r) => '<button type="button" class="hx-heat-l" data-go="' + r.b.id + '">' + esc(r.b.code) + '</button>' + r.d.map((v, i) => '<i style="--a:' + Math.sqrt(v / gmax).toFixed(3) + '" data-tt="' + esc(r.b.name + ', ' + dayLbl(DAYS[i]) + '\n' + nf.format(Math.round(v)) + ' API requests') + '"></i>').join('')).join('') +
+        '<span></span>' + DAYS.map((d, i) => '<span class="hx-heat-x">' + (i % 7 === 0 ? esc(dayLbl(d)) : '') + '</span>').join('') + '</div></div>' +
+      '<div class="hx-card hx-ring rv"><div class="hx-card-h"><span class="hx-mono">hands off</span></div><svg viewBox="0 0 120 120" class="hx-ring-s" aria-hidden="true"><circle class="bg" cx="60" cy="60" r="' + R + '"/><circle class="fg" cx="60" cy="60" r="' + R + '" style="--c:' + C.toFixed(1) + ';--off:' + (C * (1 - handsOff / 100)).toFixed(1) + '"/></svg>' +
+        '<span class="hx-ring-v">' + hxNum(handsOff, 'pct') + '</span><p>of API requests ran with no person in the loop: autonomous agents only.</p>' +
+        '<div class="hx-ring-f"><span class="hx-mono dim">people served</span><b>' + nf.format(people) + '</b></div></div></div></section>';
+
+    // ---- concentration
+    const plats = M.plats.map((p) => ({ ...p, agents: new Set([...p.r, ...p.w]).size })).sort((a, b) => b.agents - a.agents || b.rows - a.rows).slice(0, 8);
+    const models = {}; list.forEach((a) => { models[a.model] = (models[a.model] || 0) + 1; });
+    const plat = {}; list.forEach((a) => { const k = a.platform || 'Unknown'; plat[k] = (plat[k] || 0) + 1; });
+    const split = (obj, lab) => { const tot = Object.values(obj).reduce((x, y) => x + y, 0) || 1; return '<div class="hx-split">' + Object.entries(obj).sort((x, y) => y[1] - x[1]).map(([k, v], i) => '<i class="s' + Math.min(i, 3) + '" style="--w:' + ((v / tot) * 100).toFixed(1) + '%" data-tt="' + esc((lab(k)) + ': ' + v + ' ' + plural(v, 'agent')) + '"></i>').join('') + '</div><div class="hx-split-l">' + Object.entries(obj).sort((x, y) => y[1] - x[1]).map(([k, v], i) => '<span><i class="s' + Math.min(i, 3) + '"></i>' + esc(lab(k)) + ' ' + v + '</span>').join('') + '</div>'; };
+    h += '<section class="hx-sec" id="hx-conc">' + hxHead('concentration', 'Where one outage ', 'hits many', '.', 'Shared systems, models and platforms. If one of these goes down or changes its terms, every agent on it feels it.') +
+      '<div class="hx-tiles rv">' + plats.map((p) => '<div class="hx-tile' + (p.agents >= 10 ? ' hot' : '') + '" data-tt="' + esc(p.name + '\n' + p.agents + ' agents, ' + p.w.size + ' write to it') + '"><span class="hx-tile-c">' + esc(sysAbbr(p.name)) + '</span><span class="hx-tile-n">' + esc(p.name.toLowerCase()) + '</span><span class="hx-tile-v">' + p.agents + ' agents</span></div>').join('') + '</div>' +
+      '<div class="hx-two rv"><div class="hx-card"><div class="hx-card-h"><span class="hx-mono">models</span></div>' + split(models, (k) => (PRICES[k] && PRICES[k].label) || k) + '</div>' +
+      '<div class="hx-card"><div class="hx-card-h"><span class="hx-mono">runtime platforms</span></div>' + split(plat, (k) => k) + '</div></div></section>';
+
+    // ---- pipeline and governance coverage
+    const lanes = ['production', 'review', 'draft'].map((st) => {
+      const as = AGENTS.filter((a) => a.status === st); const wt = as.reduce((x, a) => x.concat(a.tools.filter((t) => t.mode === 'w')), []);
+      return { st, as, checks: [['owner named', as.filter((a) => a.owner).length, as.length], ['guardrails written', as.filter((a) => a.guard.length).length, as.length], ['telemetry wired', as.filter((a) => a.use).length, as.length], ['write tools with an approver', wt.filter((t) => t.approval).length, wt.length]] };
     });
-    h += '</tbody></table></div></section>';
+    h += '<section class="hx-sec" id="hx-pipe">' + hxHead('pipeline', "What's coming, and ", 'how governed', ' it is.', 'Agents move from first draft to review to production. The checks below are what a governance board looks for before go-live.') +
+      '<div class="hx-lanes">' + lanes.map((l, i) => '<div class="hx-card hx-lane' + (i === 0 ? ' lit' : '') + ' rv"><span class="hx-mono">' + esc(STATUS[l.st].toLowerCase()) + '</span><span class="hx-big">' + hxNum(l.as.length, 'int') + '</span><span class="hx-mono dim">' + plural(l.as.length, 'agent') + '</span>' +
+        '<ul>' + l.checks.map(([t, v, of]) => '<li class="' + (of && v === of ? 'ok' : 'gap') + '">' + icon(of && v === of ? 'check' : 'info', 'mini') + '<span>' + esc(t) + '</span><b>' + v + ' / ' + of + '</b></li>').join('') + '</ul>' +
+        '<button type="button" class="hx-btn ' + (i === 0 ? 'lime' : 'ghost') + ' wide" data-life="' + l.st + '">Show ' + esc(STATUS[l.st].toLowerCase()) + ' agents</button></div>').join('') + '</div></section>';
+
+    // ---- close: where next + status strip
+    const worry = BPS.map((b) => ({ b, v: list.filter((a) => a.home !== b.id && calc(a).touch[b.id] && calc(a).touch[b.id].write).length + M.per[b.id].agents.filter((a) => a.health !== 'healthy' && a.health !== 'unknown').length * 3 })).sort((x, y) => y.v - x.v).slice(0, 6);
+    h += '<section class="hx-sec hx-close"><div class="hx-closing"><div class="hx-card hx-brand rv"><span class="brand-mark big" aria-hidden="true">' + hxMark() + '</span><p>Agent governance for ' + esc(TENANT.name || 'the enterprise') + '. Visibility only: the console runs nothing and approves nothing.</p><span class="hx-mono dim">gcp first / vertex ai agent engine / adk</span></div>' +
+      '<div class="hx-cta rv"><span class="hx-mono">where next</span><h2 class="hx-h2">Start with the unit <em>you worry about most.</em></h2><p>These units receive the most writes from other units or have an agent that needs attention.</p>' +
+      '<div class="hx-cta-go">' + worry.map((x) => '<button type="button" data-go="' + x.b.id + '"><b>' + esc(x.b.code) + '</b>' + esc(x.b.name) + '</button>').join('') + '</div></div></div>' +
+      '<div class="hx-strip"><span><i class="' + (inc ? 'bad' : deg ? 'warn' : '') + '"></i>' + esc(statusTxt) + '</span><span><i></i>' + n + ' ' + lifeWord + plural(n, 'agent') + ' across ' + BPS.length + ' units</span><span><i></i>sample data, illustrative prices</span></div></section></div>';
+
     $('#main').innerHTML = h;
+  }
+
+  // home page scroll reveals and counters
+  let HX = null;
+  function bindHx() {
+    if (HX) { HX.stop(); HX = null; }
+    const root = $('#main .hx'); if (!root) return;
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const main = $('#main');
+    // reveal on scroll
+    const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); countUp(e.target); } }), { root: main, threshold: 0.12 }) : null;
+    const countUp = (el) => {
+      el.querySelectorAll('.hx-num[data-count]').forEach((n) => {
+        const v = +n.dataset.count, fmt = n.dataset.fmt; if (reduce || !v) return;
+        const t0 = performance.now(); const dur = 1100;
+        const step = (t) => { const k = Math.min(1, (t - t0) / dur); const e = 1 - Math.pow(1 - k, 3); n.textContent = hxFmt(v * e, fmt); if (k < 1) requestAnimationFrame(step); };
+        requestAnimationFrame(step);
+      });
+    };
+    root.querySelectorAll('.rv').forEach((el) => { if (io && !reduce) io.observe(el); else el.classList.add('in'); });
+    HX = { stop() { if (io) io.disconnect(); } };
   }
 
   /* ---------------------------------------------------------------- Agent modal */
@@ -775,15 +1585,18 @@
 
   /* ---------------------------------------------------------------- render */
   function render() {
-    const ae = document.activeElement; const keepQ = ae && ae.id === 'q' ? ae.selectionStart : null;
+    const ae = document.activeElement; const keepId = ae && (ae.id === 'q' || ae.id === 'dq') ? ae.id : null; const keepQ = keepId ? ae.selectionStart : null;
     renderTop();
     if (!SRC.ready) { $('#nav').innerHTML = ''; $('#main').innerHTML = loadingView(); return; }
     if (SRC.empty) { $('#nav').innerHTML = ''; $('#main').innerHTML = bannerHtml() + emptyView(); return; }
     renderNav();
-    if (state.view === 'all') renderAll(); else renderBP();
+    if (state.view === 'all') renderAll(); else { if (STACK) { STACK.stop(); STACK = null; } renderBP(); }
+    const pageKey = state.view === 'all' ? 'all' : state.bp; if (state._page !== pageKey) { state._page = pageKey; $('#main').scrollTop = 0; }
     $('#main').insertAdjacentHTML('afterbegin', bannerHtml());
     renderModal(); paintSprites(); resolveNames();
-    if (keepQ != null) { const q = $('#q'); if (q) { q.focus(); try { q.setSelectionRange(keepQ, keepQ); } catch (e) { /* ignore */ } } }
+    $('.app').classList.toggle('home', state.view === 'all');
+    if (state.view === 'all') { bindHome(); bindHx(); } else if (HX) { HX.stop(); HX = null; }
+    if (keepQ != null) { const q = $('#' + keepId); if (q) { q.focus(); try { q.setSelectionRange(keepQ, keepQ); } catch (e) { /* ignore */ } } }
     document.title = (state.agent && AG[state.agent] ? AG[state.agent].name + ' – ' : state.view === 'all' ? 'All processes – ' : (BP[state.bp] ? BP[state.bp].name + ' – ' : '')) + 'Agent Governance Console';
   }
 
@@ -1126,8 +1939,9 @@
 
   /* ---------------------------------------------------------------- events */
   document.addEventListener('click', (e) => {
+    document.querySelectorAll('details.hinfo[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
     if (e.target.closest('#form')) return;
-    const t = e.target.closest('[data-go],[data-agent],[data-life],[data-arch],[data-step],[data-density],[data-cross],[data-tab],[data-collapse],[data-add],[data-edit],#m-close,#copy-md');
+    const t = e.target.closest('[data-go],[data-agent],[data-life],[data-arch],[data-step],[data-hlayer],[data-hdraft],[data-hlive],[data-theme-set],[data-bpview],[data-dsys],[data-dstruct],[data-hscroll],[data-density],[data-cross],[data-tab],[data-collapse],[data-add],[data-edit],#m-close,#copy-md');
     if (!t) { if (!e.target.closest('.gs')) $('#gs-results').hidden = true; if (e.target.id === 'modal') closeModal(); return; }
     if (t.disabled) return;
     if (t.id === 'm-close') return closeModal();
@@ -1142,6 +1956,24 @@
     if (t.dataset.go) { if (state.agent) state.agent = null; return go(t.dataset.go); }
     if (t.dataset.life) { state.lifecycle = t.dataset.life; return render(); }
     if (t.dataset.arch) { state.arch = t.dataset.arch; return render(); }
+    if (t.dataset.hscroll) { e.preventDefault(); const tg = document.getElementById(t.dataset.hscroll); if (tg) tg.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); return; }
+    if (t.dataset.bpview) { state.bpView = t.dataset.bpview; savePrefs(); return render(); }
+    if (t.dataset.dstruct) { state.dStruct = t.dataset.dstruct; return render(); }
+    if (t.dataset.dsys) {
+      const k = t.dataset.dsys; state.dataSys = state.dataSys === k ? null : k; render();
+      const el = state.dataSys ? $('#dpanel') : document.querySelector('[data-dsys="' + CSS.escape(k) + '"]');
+      if (el) { if (state.dataSys) el.scrollIntoView({ block: 'nearest', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); else el.focus(); }
+      return;
+    }
+    if (t.dataset.themeSet) { state.theme = t.dataset.themeSet; savePrefs(); return render(); }
+    if (t.dataset.hlive !== undefined) { if (STACK && STACK.toggle) STACK.toggle(); return; }
+    if (t.dataset.hdraft) { state.homeDraft = +t.dataset.hdraft; savePrefs(); return render(); }
+    if (t.dataset.hlayer) {
+      // focus one layer without redrawing, so the animation keeps running
+      state.homeLayer = t.dataset.hlayer; ['#stack', '#lv', '#one'].forEach((sel) => { const v = $(sel); if (v) v.dataset.layer = state.homeLayer; });
+      document.querySelectorAll('[data-hlayer]').forEach((b) => { const on = b.dataset.hlayer === state.homeLayer; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+      return;
+    }
     if (t.dataset.step !== undefined) {
       const k = t.dataset.step; state.step = !k || state.step === k ? null : k; render();
       const nb = document.querySelector('[data-step="' + CSS.escape(state.step || '') + '"]'); if (nb) nb.focus();
@@ -1155,6 +1987,7 @@
   function closeModal() { state.agent = null; hideTT(); const f = state._lastFocus; go(state.view === 'all' ? 'all' : state.bp); if (f && document.body.contains(f)) f.focus(); }
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      const hi = document.querySelector('details.hinfo[open]'); if (hi) { hi.open = false; hi.querySelector('summary').focus(); return; }
       if (FORM.open) { if (FORM.confirm) { FORM.confirm = false; renderFoot(); } else closeForm(); return; }
       if (!$('#gs-results').hidden) { $('#gs-results').hidden = true; return; }
       if (state.agent) closeModal();
@@ -1180,6 +2013,7 @@
   document.addEventListener('input', (e) => {
     if (e.target.closest('#form')) return;
     if (e.target.id === 'q') { state.q = e.target.value; render(); }
+    if (e.target.id === 'dq') { state.dq = e.target.value; render(); }
     if (e.target.id === 'gs') renderSearch(e.target.value.trim());
   });
   document.addEventListener('change', (e) => { if (e.target.id === 'sort') { state.sort = e.target.value; render(); } });

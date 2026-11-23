@@ -2,7 +2,7 @@
 
 _Added 2026-11-19_
 
-- [ ] Make a home page
+- [x] Make a home page: the enterprise stack (users, agents and data layers with animated flows) under All business processes, with a dashboard per layer below. Expect more iterations
 - [x] Add a filter for agent lifecycle status (e.g. First draft, In review, Deployed): in prototype v1, defaults to Production
 - [x] Add and edit agents from the console, stored in a backend (artifact database; `dev/mock-backend.js` locally)
 - [x] Apply the executive style system (tokens, type, copy rules) to the front end

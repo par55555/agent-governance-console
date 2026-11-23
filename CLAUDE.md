@@ -25,7 +25,7 @@ python tests/screenshots.py r1             # 1440 and 1024 screenshots into test
 node tools/build_seed.js                   # after editing data/data.js
 ```
 
-Run `form_test.py` after any change to the form, the data layer or connection handling. After visual changes, run `screenshots.py`, look at the images at both widths, and fix what's weak before calling it done.
+After changing `app.js`, bump the `?v=` date on its script tag in `index.html` so browsers don't serve a cached copy. Run `form_test.py` after any change to the form, the data layer or connection handling. After visual changes, run `screenshots.py`, look at the images at both widths, and fix what's weak before calling it done.
 
 ## Architecture
 
@@ -34,7 +34,7 @@ No framework and no build step: `index.html` (shell + all CSS) and `app.js` (one
 1. utilities, then the **data layer**: `procFromDoc`, `agentFromDoc` (treat every doc as untrusted), `buildModel`, `homeReason`, `calc` (all cost and request math, memoized in `CALC`), `footprint` (cross-process touch map)
 2. state + hash routing (`#o2c`, `#all`, `#agent-<id>`)
 3. components (`chip`, `icon`, pills), pixel sprites, top bar + nav
-4. views: `renderBP` (process page), `renderAll` (cross-process map + table), `renderModal` (agent detail with tabs Overview, Data sources, Agent spec, Consumption, Value), `bindChart`
+4. views: `renderBP` (process page, with an Agent view / Data view toggle; the data view is `dataCatalog` + `dataSection`, classification rules in `DATA_PLATFORMS` and `DS_TYPES`), `renderAll` (home: a dark executive briefing; hero, the live map `oneHtml`/`bindOne` or the deep dive `layersHtml`/`bindLayers`, then sections for exposure, attention, spend, activity, concentration and pipeline; ribbons, reveals and counters in `bindHx`. `stackSvg`/`bindStack` is the retired draft 1, kept for reference), `renderModal` (agent detail with tabs Overview, Data sources, Agent spec, Consumption, Value), `bindChart`
 5. connection chrome (`srcPill`, banners, loading/empty), `render()`
 6. add/edit form: `blankDraft`, `draftFromDoc`, `docFromDraft`, `validate`, `renderForm`, `saveForm`
 7. events (delegated clicks on `data-*` attributes), then `connect()`
@@ -56,8 +56,10 @@ Collections: `config/tenant`, `processes/{id}`, `agents/{agent_id}`, `usage/{age
 - Palette (adopted 2026-11-20): navy #1B2A4A (ink + primary), sand #E8D8B9 (warm accents, sprite frames), frame grey #F4F6F8 (page title frame), surface #F8F3EA (rail, quiet fills), tangerine #F28C28 (accent fills only, fails AA as text), orange #9A4700 (text-safe tangerine), slate #4F586C, mist #E6DCCB (hairlines), crimson #B42318, base #FFFFFF. Tints: navy-8 for hover/selected, orange-8, crimson-8. No gradients, no other hues, including in the pixel sprites (which add clay #8C7550). Full rules in `docs/STYLE_SYSTEM.md`.
 - Orange/tangerine means "writes into another process" or "degraded", and also marks "you are here" (selected nav bar, active tab, latest chart point). Crimson means "incident" or "error". Color is never the only signal: pair it with an icon or words.
 - Type: Source Serif 4 for page titles and narrative sentences; IBM Plex Sans for everything else. Body 16px, scale about 1.25, tabular numbers. Monospace only for the system prompt and raw Agent.md.
+- **Two themes, switched by "Neon / Light" in the top bar (2026-11-22; saved in local storage as `theme`, default Neon).** Neon (`body.neon`) is the dark look styled after a reference video: near-black #07090B, ink #EEF1F4, lime #C6F24E in the role navy has in Light, cyan #5CC8FF for people, orange/tangerine for writes, crimson #FF6B5E for incidents, glass cards, mono lowercase labels. Every neon rule in the `<style>` is prefixed `body.neon`. Light (`body.light`) is the navy / sand / tangerine scheme below. Shared home-page rules (`.hx-*`) take their colors from `--fg-rgb`, `--acc-rgb`, `--on-acc`, `--hx-lime`, `--hx-cyan`, so a new home component must use those, not raw white or lime. Check both themes after any visual change.
+- Home stage exception (by request, 2026-11-21): the One view on the home page sits on a navy gradient stage with depth: zone gradients, drop shadows, a perspective floor grid, a CSS 3D tilt that follows the mouse, and lifted agents. Extra shades `--navy-deep` #0D1628 and `--navy-lift` #2E4676 exist only for it. Keep all of this inside `.home-head.stage`; everywhere else the rules below still hold.
 - Banned: ALL-CAPS or eyebrow labels, "A · B · C" meta strings, arrows on buttons, emoji, shadows (one subtle overlay shadow for dialogs only), rows of stat cards. Use hairlines and open layout.
-- Each view leads with one serif sentence that carries the numbers (the "hero"), not a KPI row.
+- Each view leads with one serif sentence that carries the numbers (the "hero"), not a KPI row. Exception: the home page (All business processes) leads with the visual only, by request.
 - Spacing on an 8px scale; radius 4px for controls and chips, 8px for panels; content max width about 1280px, left aligned.
 - Charts: no gridlines, slate axis text, petrol or ink for data, direct labels on the latest value and peak.
 - Motion: 150 to 200ms ease-out only, and none under `prefers-reduced-motion`.
@@ -68,4 +70,4 @@ CSS lives in one `<style>` block in `index.html`. Tokens and type scale are cust
 
 ## Open work
 
-See `docs/TODO.md`. Most likely next steps: a real backend adapter, the telemetry ingestion job, grouping tiles by step in large processes, de-duplicating users across agents, and a home page.
+See `docs/TODO.md`. Most likely next steps: a real backend adapter, the telemetry ingestion job, de-duplicating users across agents, and iterating on the home page stack (see `docs/DESIGN.md`).
