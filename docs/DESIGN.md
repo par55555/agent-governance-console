@@ -128,3 +128,17 @@ Styled after a reference video the owner shared. Update 2026-11-22: the dark the
 ## Process page: Data view (2026-11-23)
 
 A toggle at the top right of the agents section switches between Agent view and Data view (remembered per browser). Data view shows one tile per source platform holding data that belongs to the business unit (any agent's input, tool or output whose process is this unit): a two-letter mark, platform kind (ERP, Data warehouse, Email...), structure chips, dataset and agent counts, the types of data held, how many agents write to it, and a "Personal data" flag where the platform or dataset suggests it. Select a tile to open a panel listing each dataset: what it holds (from the specs), type of data, structure and format (marked inferred unless the spec sets them), tools that reach it, and agents that read or write it. Filters: free text and structure. The step filter applies to the Agent view only. No data values are ever shown.
+
+
+## Process page: User view (2026-11-23)
+
+Third option on the Agent / Data / User toggle. Scope: "This unit's agents" (people who use at least one agent homed here, counting only those agents) or "All agents" (enterprise-wide ranking). Shows a sentence with people, interactions, tokens and how concentrated use is (share from the busiest 10%), five figures, most active roles, where the people sit (or interactions by unit), and a ranked list of people (50 at a time, filterable). Selecting a person opens their row: interactions, tokens in and out, estimated cost, a 30-day trend and a per-agent breakdown.
+
+Data honesty: the registry holds user groups per agent (process, role, head count), not people, and telemetry does not yet carry the caller. People are generated deterministically from the groups as sample data; a group shared by several agents is one pool, so a person is counted once (this also de-duplicates users across agents for this view). Interactions per agent = invocations x a user-facing share by type (conversational 1, analytical 0.6, monitoring 0.15, automation 0.08), split across groups by head count and across people by a skewed weight; tokens and cost follow the agent's tokens and cost per invocation. Replace with per-user telemetry (Cloud Logging principal joined on agent_id) when available; `peopleModel()` is the one place to change.
+
+
+## Add data, identity and the home people section (2026-11-23)
+
+- The heading button follows the view: Agent view "Add agent", Data view "Add data" (dialog: source system, dataset, what it holds, type, structure, format, owner; saves to `datasets/`), User view none.
+- People are attributed to Google Cloud Identity: work email, org unit path and source shown on each person (sample until the directory sync runs).
+- Home page section "Who uses AI the most": people count, concentration (share from the busiest 10%), most active role, top 8 people. Selecting a person opens their unit's User view, enterprise-wide, with that person expanded; "See everyone" opens the full list.

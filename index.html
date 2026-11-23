@@ -1204,6 +1204,8 @@ body.neon .lv-cell.on { background: rgba(255, 255, 255, .05); }
 body.neon .brand-mark svg { fill: #0A0D08; }
 
 /* ---------- process page: data view (source systems as tiles, datasets in a panel) */
+.sec-h > .vtoggle { margin-left: auto; }
+.toolbar.trow { margin: 0 0 var(--s2); }
 .vtoggle .seg-btn .ic { width: 14px; height: 14px; }
 .dtile { cursor: pointer; }
 .dtile.on { border-color: var(--color-navy); box-shadow: inset 0 0 0 1px var(--color-navy); }
@@ -1246,6 +1248,68 @@ body.neon .dk { background: rgba(255, 255, 255, .06); font-family: var(--font-co
 body.neon .dpii { background: rgba(255, 107, 94, .12); }
 body.neon .dpanel { background: linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .012)); border-color: var(--hx-line); border-radius: 18px; }
 body.neon .dpanel-t h3 { letter-spacing: -.02em; }
+
+/* ---------- process page: user view */
+.ulead { margin: 0 0 var(--s1); }
+.ustats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: var(--s3) 0 var(--s4); border-top: 1px solid var(--color-mist); border-bottom: 1px solid var(--color-mist); }
+.ustats div { display: flex; flex-direction: column; gap: 2px; padding: var(--s2) var(--s2) var(--s2) 0; }
+.ustats div + div { border-left: 1px solid var(--color-mist); padding-left: var(--s2); }
+.ustats b { font-size: var(--fs-25); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.ustats span { font-size: var(--fs-13); color: var(--color-slate); }
+.ucharts { margin-bottom: var(--s4); }
+.ubars-r { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ubars-r li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 52px; gap: 12px; align-items: center; font-size: 14px; }
+.ur-l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ub-t { display: block; height: 8px; border-radius: 4px; background: var(--navy-8); overflow: hidden; }
+.ub-t i { display: block; height: 100%; background: var(--color-navy); border-radius: 4px; }
+.ubars-r .ub-v, .ub-v { text-align: right; font-variant-numeric: tabular-nums; }
+.utbl tr.click:focus-visible { outline: 2px solid var(--color-navy); outline-offset: -2px; }
+.utbl tr.on td { background: var(--navy-8); }
+.uav { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-right: 10px; border-radius: 50%; background: var(--color-sand); color: var(--color-ink); font-size: 11px; font-weight: 600; vertical-align: middle; }
+.utbl td b { font-weight: 600; }
+.utbl td:nth-child(2) { white-space: nowrap; }
+.ud-t td { vertical-align: middle; }
+.udet td { padding: 0 !important; background: var(--color-frame); }
+.ud { padding: var(--s3); }
+.ud-h { display: grid; grid-template-columns: minmax(0, 1fr) 220px; grid-template-rows: auto auto; gap: 8px var(--s3); align-items: center; margin-bottom: var(--s2); }
+.ud-h .ud-sp { grid-column: 2; grid-row: 1 / span 2; }
+.ud-h > div:first-child { display: flex; flex-direction: column; }
+.ud-k { display: flex; gap: var(--s3); flex-wrap: wrap; font-size: 14px; color: var(--color-slate); }
+.ud-k b { color: var(--color-ink); font-size: 18px; font-weight: 600; margin-right: 4px; }
+.ud-sp { width: 220px; height: 48px; overflow: visible; }
+.ud-sp polyline { fill: none; stroke: var(--color-navy); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.ud-t { table-layout: fixed; }
+.ud-t th:first-child { width: 34%; }
+.ud-t th:last-child { width: 14%; }
+.ud-t .ub-t { width: 100%; }
+.ud-a { border: 0; background: none; padding: 0; color: var(--color-ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; margin-right: 6px; }
+.umore { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+body.neon .uav { background: rgba(92, 200, 255, .15); color: var(--hx-cyan); font-family: var(--font-code); }
+body.neon .ub-t i { background: linear-gradient(90deg, rgba(198, 242, 78, .45), var(--hx-lime)); }
+body.neon .ud-sp polyline { stroke: var(--hx-lime); filter: drop-shadow(0 0 4px rgba(198, 242, 78, .5)); }
+body.neon .udet td { background: rgba(255, 255, 255, .025); }
+body.neon .ustats b { font-family: var(--font-sans); }
+@media (max-width: 1100px) { .ustats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ustats div:nth-child(4) { border-left: 0; padding-left: 0; } .ud-h { grid-template-columns: 1fr; } .ucharts { grid-template-columns: 1fr; } }
+
+/* ---------- add data dialog, identity details, home people section */
+#dform { position: fixed; inset: 0; z-index: 60; background: var(--ink-scrim); display: grid; place-items: center; padding: var(--s3); }
+#dform[hidden] { display: none; }
+.dcard { width: min(760px, 100%); }
+.df-body { display: grid; gap: var(--s2); padding: var(--s3) var(--s4); overflow: auto; }
+.btn.icon-only { padding: 8px; }
+.dreg { display: inline-block; font-size: 11.5px; padding: 0 7px; line-height: 18px; border-radius: var(--r-ctl); background: var(--navy-8); color: var(--color-ink); }
+.uem { display: block; margin-left: 36px; font-size: 12px; color: var(--color-slate); font-family: var(--font-code); }
+.uid { display: block; margin-top: 4px; font-size: 12px; color: var(--color-slate); font-family: var(--font-code); }
+.hx-big-s { font-size: 30px; line-height: 1.15; letter-spacing: -.02em; }
+.hx-prow { display: grid; grid-template-columns: 24px 30px minmax(0, 1.4fr) auto minmax(0, 1fr) 150px 90px; gap: var(--s2); align-items: center; width: 100%; padding: 10px 8px; border: 0; border-top: 1px solid var(--hx-line); background: transparent; color: var(--color-ink); text-align: left; border-radius: 8px; transition: background 180ms ease-out; }
+.hx-prow:hover { background: rgba(var(--fg-rgb), .04); }
+.hx-prow .uav { margin: 0; }
+.hx-prk { font-family: var(--font-code); font-size: 12px; color: var(--color-slate); text-align: right; }
+.hx-pbar { display: block; height: 6px; border-radius: 6px; background: rgba(var(--fg-rgb), .08); overflow: hidden; }
+.hx-pbar i { display: block; height: 100%; border-radius: 6px; background: var(--hx-lime); }
+.hx-pv { font-size: 13px; color: var(--color-slate); text-align: right; white-space: nowrap; }
+.hx-pv b { color: var(--color-ink); font-weight: 600; font-size: 15px; }
+@media (max-width: 1100px) { .hx-prow { grid-template-columns: 24px 30px minmax(0, 1fr) auto 110px; } .hx-prow .hx-pbar, .hx-prow .hx-pv:last-child { display: none; } }
 </style>
 </head>
 <body>
@@ -1277,6 +1341,7 @@ body.neon .dpanel-t h3 { letter-spacing: -.02em; }
 </div>
 <div id="modal" role="dialog" aria-modal="true" aria-labelledby="m-title" hidden></div>
 <div id="form" role="dialog" aria-modal="true" aria-labelledby="f-title" hidden></div>
+<div id="dform" role="dialog" aria-modal="true" hidden></div>
 <div id="toast" role="status" aria-live="polite" hidden></div>
 <div id="tt" role="tooltip" hidden></div>
 <script>
@@ -1284,6 +1349,6 @@ body.neon .dpanel-t h3 { letter-spacing: -.02em; }
    for the artifact database. Inside the claude.ai artifact this does nothing. */
 if (!window.claude && /[?&]dev(=|&|$)/.test(location.search)) document.write('<script src="dev/mock-backend.js"><\/script>');
 </script>
-<script src="app.js?v=2026-11-23d"></script>
+<script src="app.js?v=2026-11-23m"></script>
 </body>
 </html>

@@ -171,8 +171,8 @@
   }
 
   /* ---------------------------------------------------------------- state + routing */
-  const state = { bp: 'o2c', view: 'bp', lifecycle: 'production', arch: 'all', step: null, homeLayer: 'all', homeDraft: 3, theme: 'neon', bpView: 'agents', dq: '', dStruct: 'all', dataSys: null, sort: 'req', q: '', density: 'comfortable', crossTab: 'in', agent: null, tab: 'overview', collapsed: {} };
-  try { const saved = JSON.parse(localStorage.getItem('agc-prefs') || '{}'); if (saved.density) state.density = saved.density; if (saved.collapsed) state.collapsed = saved.collapsed; if ([2, 3].includes(saved.homeDraft)) state.homeDraft = saved.homeDraft; if (saved.theme === 'light') state.theme = 'light'; if (saved.bpView === 'data') state.bpView = 'data'; } catch (e) { /* storage unavailable */ }
+  const state = { bp: 'o2c', view: 'bp', lifecycle: 'production', arch: 'all', step: null, homeLayer: 'all', homeDraft: 3, theme: 'neon', bpView: 'agents', dq: '', dStruct: 'all', dataSys: null, uq: '', uScope: 'bu', uSel: null, uLimit: 50, _keepUser: false, _scrollUser: null, sort: 'req', q: '', density: 'comfortable', crossTab: 'in', agent: null, tab: 'overview', collapsed: {} };
+  try { const saved = JSON.parse(localStorage.getItem('agc-prefs') || '{}'); if (saved.density) state.density = saved.density; if (saved.collapsed) state.collapsed = saved.collapsed; if ([2, 3].includes(saved.homeDraft)) state.homeDraft = saved.homeDraft; if (saved.theme === 'light') state.theme = 'light'; if (saved.bpView === 'data' || saved.bpView === 'users') state.bpView = saved.bpView; } catch (e) { /* storage unavailable */ }
   function savePrefs() { try { localStorage.setItem('agc-prefs', JSON.stringify({ density: state.density, collapsed: state.collapsed, homeDraft: state.homeDraft, theme: state.theme, bpView: state.bpView })); } catch (e) { /* ignore */ } }
 
   function parseHash() {
@@ -183,7 +183,7 @@
       if (state.agent !== a.id) state.tab = 'overview';
       state.agent = a.id;
     } else if (h === 'all') { state.view = 'all'; state.agent = null; }
-    else if (BP[h]) { if (state.bp !== h) { state.step = null; state.dataSys = null; state.dq = ''; state.dStruct = 'all'; } state.view = 'bp'; state.bp = h; state.agent = null; }
+    else if (BP[h]) { if (state.bp !== h) { state.step = null; state.dataSys = null; state.dq = ''; state.dStruct = 'all'; if (!state._keepUser) { state.uSel = null; state.uLimit = 50; state.uq = ''; } } state._keepUser = false; state.view = 'bp'; state.bp = h; state.agent = null; }
     else { state.agent = null; }
     state._booted = true;
   }
@@ -386,6 +386,15 @@
   // What we know about a source platform. Datasets inherit these unless their name says otherwise, or the
   // agent spec sets data_type / structure / format on the row. Everything here is inferred, never read from the data.
   const DATA_PLATFORMS = [
+    [/^Oracle (Fusion|E-Business|EBS|Cloud ERP|NetSuite)|^NetSuite|^Microsoft Dynamics|^Dynamics 365|^Infor|^Epicor/i, { kind: 'ERP', structure: 'Structured', format: 'Relational tables', iface: 'REST / SOAP API' }],
+    [/^Oracle( Database| DB)?$|^SQL Server|^PostgreSQL|^Postgres|^MySQL|^Cloud SQL|^AlloyDB|^Spanner/i, { kind: 'Database', structure: 'Structured', format: 'Relational tables', iface: 'SQL (JDBC)' }],
+    [/^Snowflake|^Databricks|^Redshift|^Synapse|^Teradata/i, { kind: 'Data warehouse', structure: 'Structured', format: 'Columnar tables', iface: 'SQL', dtype: 'Analytics' }],
+    [/^Cloud Storage|^GCS|^Amazon S3|^S3\b|^Azure (Blob|Data Lake)|^ADLS/i, { kind: 'Object storage', structure: 'Semi-structured', format: 'Files (Parquet, CSV, JSON, PDF)', iface: 'Storage API' }],
+    [/^SharePoint|^OneDrive|^Box\b|^Dropbox|^Confluence/i, { kind: 'Documents', structure: 'Unstructured', format: 'Office documents and PDF', iface: 'REST API', dtype: 'Documents' }],
+    [/^Microsoft Teams|^Slack/i, { kind: 'Messaging', structure: 'Unstructured', format: 'Chat messages', iface: 'REST API', dtype: 'Communications' }],
+    [/^Outlook|^Exchange/i, { kind: 'Email', structure: 'Unstructured', format: 'Email (MIME) + attachments', iface: 'Graph API', dtype: 'Communications', pii: true }],
+    [/^Tableau|^Power BI/i, { kind: 'BI', structure: 'Structured', format: 'Workbooks and extracts', iface: 'REST API', dtype: 'Analytics' }],
+    [/^Kafka|^Confluent|^Event Hubs|^Kinesis/i, { kind: 'Event stream', structure: 'Semi-structured', format: 'JSON / Avro messages', iface: 'Streaming API', dtype: 'Events' }],
     [/^SAP /, { kind: 'ERP', structure: 'Structured', format: 'Relational tables (SAP HANA)', iface: 'OData / BAPI' }],
     [/^BigQuery ML/, { kind: 'ML model', structure: 'Structured', format: 'Model scores', iface: 'SQL (ML.PREDICT)', dtype: 'Model output' }],
     [/^BigQuery/, { kind: 'Data warehouse', structure: 'Structured', format: 'Columnar tables', iface: 'SQL', dtype: 'Analytics' }],
@@ -483,6 +492,12 @@
       a.outputs.forEach((x) => add(x.bp, x.dest, x.what, x.mode, 'out', x));
       a.tools.forEach((x) => add(x.bp, x.system, '', x.mode, 'tool', x.name));
     });
+    (SRC.raw.datasets || []).forEach((x) => {
+      if (!x || x.process !== bpId || !x.platform || !x.name) return;
+      const plat = String(x.platform); const P = sys[plat] || (sys[plat] = { name: plat, info: platformInfo(plat), ds: {}, agents: new Set(), w: new Set() });
+      const D = P.ds[x.name] || (P.ds[x.name] = { name: String(x.name), whats: new Set(), tools: new Set(), r: new Set(), w: new Set(), rows: [] });
+      if (x.holds) D.whats.add(String(x.holds)); D.rows.push({ dtype: str(x.data_type), struct: str(x.structure), fmt: str(x.format) }); D.owner = str(x.owner); D.registered = true;
+    });
     return Object.values(sys).map((P) => {
       P.list = Object.values(P.ds).map((D) => { const c = classifyDataset(P.name, D.name, Array.from(D.whats), D.rows); return Object.assign(D, c); })
         .sort((x, y) => STRUCT_ORDER.indexOf(x.structure) - STRUCT_ORDER.indexOf(y.structure) || x.name.localeCompare(y.name));
@@ -500,9 +515,9 @@
     const shown = cat.filter(match);
     const nds = cat.reduce((x, P) => x + P.list.length, 0);
     const counts = {}; cat.forEach((P) => P.list.forEach((d) => { counts[d.structure] = (counts[d.structure] || 0) + 1; }));
-    if (state.dataSys && !cat.some((P) => P.name === state.dataSys)) state.dataSys = null;
-    let h = '<section class="sec" aria-labelledby="sec-agents"><div class="sec-h"><h2 id="sec-agents">Data in ' + esc(b.name) + ' <span class="count">' + cat.length + '</span></h2>' +
-      '<div class="toolbar"><label class="search-in">' + icon('search') + '<span class="sr">Filter data</span><input id="dq" type="search" placeholder="Filter by system, dataset or format" value="' + esc(state.dq) + '"></label>' + toggle + '</div></div>';
+    // a just-registered system may arrive a moment after the save, so the selection is kept until it does
+    let h = '<section class="sec" aria-labelledby="sec-agents"><div class="sec-h"><h2 id="sec-agents">Data in ' + esc(b.name) + ' <span class="count">' + cat.length + '</span>' + addDataBtn(b.id) + '</h2>' + toggle + '</div>' +
+      '<div class="toolbar trow"><label class="search-in">' + icon('search') + '<span class="sr">Filter data</span><input id="dq" type="search" placeholder="Filter by system, dataset or format" value="' + esc(state.dq) + '"></label></div>';
     h += '<p class="sec-sub">' + cat.length + ' source ' + plural(cat.length, 'system') + ' hold ' + nds + ' ' + plural(nds, 'dataset') + ' that agents read or write in ' + esc(b.name) + '. Select a system to see its datasets. Nothing here shows the data itself; type, structure and format are inferred from the system unless the agent spec records them.</p>';
     h += '<div class="filters"><div class="seg sm" role="group" aria-label="Structure">' + [['all', 'All structures', nds]].concat(STRUCT_ORDER.filter((s) => counts[s]).map((s) => [s, s, counts[s]])).map(([k, l, n]) =>
       '<button type="button" class="seg-btn' + (sf === k ? ' on' : '') + '" data-dstruct="' + esc(k) + '" aria-pressed="' + (sf === k) + '">' + esc(l) + ' <span class="seg-n">' + n + '</span></button>').join('') + '</div></div>';
@@ -518,11 +533,11 @@
     }).join('') + '</div>';
     const P = shown.find((x) => x.name === state.dataSys);
     if (P) {
-      h += '<div class="dpanel" id="dpanel" role="region" aria-label="' + esc(P.name + ' datasets') + '"><div class="dpanel-h"><div><span class="dmark lg">' + esc(sysAbbr(P.name)) + '</span></div><div class="dpanel-t"><h3>' + esc(P.name) + '</h3><p>' + esc(P.info.kind) + ' system. Accessed through ' + esc(P.info.iface) + '. ' + P.list.length + ' ' + plural(P.list.length, 'dataset') + ' used by ' + P.agents.size + ' ' + plural(P.agents.size, 'agent') + (P.w.size ? ', ' + P.w.size + ' of which ' + plural(P.w.size, 'writes', 'write') + ' to it' : '') + '.</p></div>' +
+      h += '<div class="dpanel" id="dpanel" role="region" aria-label="' + esc(P.name + ' datasets') + '"><div class="dpanel-h"><div><span class="dmark lg">' + esc(sysAbbr(P.name)) + '</span></div><div class="dpanel-t"><h3>' + esc(P.name) + '</h3><p>' + (P.info.kind === 'Unclassified' ? 'System not classified yet; the console has no profile for it. ' : esc(P.info.kind) + ' system. Accessed through ' + esc(P.info.iface) + '. ') + P.list.length + ' ' + plural(P.list.length, 'dataset') + ' used by ' + P.agents.size + ' ' + plural(P.agents.size, 'agent') + (P.w.size ? ', ' + P.w.size + ' of which ' + plural(P.w.size, 'writes', 'write') + ' to it' : '') + '.</p></div>' +
         '<button type="button" class="btn" data-dsys="' + esc(P.name) + '">' + icon('close') + 'Close</button></div>' +
         '<div class="tbl-wrap"><table class="tbl dtbl"><colgroup><col style="width:24%"><col style="width:30%"><col style="width:17%"><col style="width:20%"><col style="width:9%"></colgroup><thead><tr><th>Dataset</th><th>What it holds</th><th>Type of data</th><th>Structure and format</th><th class="num">Agents</th></tr></thead><tbody>' +
         P.list.map((d) => { const users = Array.from(new Set([...d.r, ...d.w])).map((id) => AG[id]).filter(Boolean);
-          return '<tr><td><b>' + esc(d.name) + '</b>' + (d.tools.size ? '<div class="dsub">' + Array.from(d.tools).map((t) => '<code>' + esc(t) + '</code>').join(' ') + '</div>' : '') + '</td>' +
+          return '<tr><td><b>' + esc(d.name) + '</b>' + (d.registered ? '<div class="dsub"><span class="dreg">Registered' + (d.owner ? ', owner ' + esc(d.owner) : '') + '</span></div>' : '') + (d.tools.size ? '<div class="dsub">' + Array.from(d.tools).map((t) => '<code>' + esc(t) + '</code>').join(' ') + '</div>' : '') + '</td>' +
             '<td>' + (d.whats.size ? Array.from(d.whats).map(esc).join('<br>') : '<span class="muted">Reached through tools only</span>') + '</td>' +
             '<td><span class="dk" data-tt="' + esc(DTYPE_HINT[d.dtype] || '') + '">' + esc(d.dtype) + '</span>' + (d.pii ? '<div class="dsub"><span class="dpii">Personal data</span></div>' : '') + '</td>' +
             '<td>' + structTag(d.structure) + '<div class="dfmt">' + esc(d.format) + (d.inferred ? ' <span class="muted">(inferred)</span>' : '') + '</div></td>' +
@@ -530,6 +545,165 @@
         '</tbody></table></div><p class="dnote">Type, structure and format are inferred from the system and dataset name unless the agent spec sets <code>data_type</code>, <code>structure</code> or <code>format</code> on the row. Confirm with the data owner before relying on them.</p></div>';
     }
     return h + '</section>';
+  }
+
+  /* ---------------------------------------------------------------- add data: register a data source for a unit */
+  // Saved to datasets/{dataset_id}. Describes the data (system, what it holds, type, structure, format, owner); never the data itself.
+  const DFORM = { open: false, bp: null, d: null, errors: {}, saving: false, msg: '', last: null };
+  const DTYPES = Object.keys(DTYPE_HINT).filter((k) => k !== 'Other');
+  function addDataBtn(bpId) {
+    if (writeOk()) return '<button type="button" class="btn primary add-btn" data-adddata="' + esc(bpId) + '">' + icon('plus') + 'Add data</button>';
+    const why = SRC.mode === 'live' ? 'Your access to this registry is view-only.' : 'Adding data needs the live registry. This view is showing a read-only snapshot.';
+    return '<button type="button" class="btn primary add-btn" disabled data-tt="' + esc(why) + '">' + icon('plus') + 'Add data</button>';
+  }
+  function openDataForm(bpId) {
+    DFORM.open = true; DFORM.bp = bpId; DFORM.errors = {}; DFORM.saving = false; DFORM.msg = ''; DFORM.last = document.activeElement;
+    DFORM.d = { platform: '', name: '', holds: '', data_type: 'Transactions', structure: 'Structured', format: '', owner: '' };
+    renderDataForm(); const f = $('#dfield-platform'); if (f) f.focus();
+  }
+  function closeDataForm() { DFORM.open = false; $('#dform').hidden = true; $('#dform').innerHTML = ''; document.body.classList.remove('modal-open'); if (DFORM.last && document.body.contains(DFORM.last)) DFORM.last.focus(); }
+  function renderDataForm() {
+    const el = $('#dform'); if (!DFORM.open) { el.hidden = true; return; }
+    const d = DFORM.d, E = DFORM.errors, b = BP[DFORM.bp];
+    const known = Array.from(new Set(AGENTS.reduce((x, a) => x.concat(a.inputs.map((i) => platformOf(i.system)), a.outputs.map((o) => platformOf(o.dest)), a.tools.map((t) => platformOf(t.system))), []))).sort();
+    const fld = (k, label, input, help, req) => '<div class="fld' + (E[k] ? ' has-err' : '') + '"><label for="dfield-' + k + '">' + esc(label) + (req ? ' <span class="req" aria-hidden="true">*</span>' : '') + '</label>' + input + (help ? '<p class="f-help">' + esc(help) + '</p>' : '') + (E[k] ? '<p class="err" id="derr-' + k + '">' + esc(E[k]) + '</p>' : '') + '</div>';
+    const inp = (k, ph, extra) => '<input id="dfield-' + k + '" data-dk="' + k + '" value="' + esc(d[k]) + '" placeholder="' + esc(ph) + '"' + (E[k] ? ' aria-invalid="true" aria-describedby="derr-' + k + '"' : '') + (extra || '') + '>';
+    const sel = (k, opts) => '<select id="dfield-' + k + '" data-dk="' + k + '">' + opts.map((o) => '<option' + (d[k] === o ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select>';
+    el.innerHTML = '<div class="m-card dcard" role="document"><header class="f-head"><div><div class="eyebrow">Adding to ' + chip(b.id, { home: true, long: true }) + '</div><h2 id="df-title">Register a data source</h2><p class="f-help">Describe the data that exists in ' + esc(b.name) + '. Nothing is connected or copied; this only records what the data is.</p></div>' +
+      '<button type="button" class="btn icon-only" id="df-close" aria-label="Close">' + icon('close') + '</button></header>' +
+      '<div class="df-body"><datalist id="dplat">' + known.map((k) => '<option value="' + esc(k) + '">').join('') + '</datalist>' +
+      '<div class="grid2">' + fld('platform', 'Source system', inp('platform', 'SAP S/4HANA', ' list="dplat" autocomplete="off"'), 'Pick an existing system or type a new one.', true) + fld('name', 'Dataset', inp('name', 'Billing documents'), 'The table, folder, object or feed.', true) + '</div>' +
+      fld('holds', 'What it holds', inp('holds', 'Billed and unbilled deliveries'), '', false) +
+      '<div class="grid3">' + fld('data_type', 'Type of data', sel('data_type', DTYPES), DTYPE_HINT[d.data_type] || '', true) + fld('structure', 'Structure', sel('structure', ['Structured', 'Semi-structured', 'Unstructured']), '', true) + fld('format', 'Format', inp('format', platformInfo(d.platform).format !== 'Not recorded' ? platformInfo(d.platform).format : 'Relational tables, JSON, PDF…'), '', false) + '</div>' +
+      fld('owner', 'Data owner', inp('owner', 'Full name or team'), 'Who answers questions about this data.', false) + '</div>' +
+      '<footer class="f-foot"><span class="f-msg" role="status">' + esc(DFORM.msg) + '</span><div class="f-actions"><button type="button" class="btn" id="df-cancel">Cancel</button><button type="button" class="btn primary" id="df-save"' + (DFORM.saving ? ' disabled' : '') + '>' + (DFORM.saving ? 'Saving…' : 'Add data') + '</button></div></footer></div>';
+    el.setAttribute('aria-labelledby', 'df-title'); el.hidden = false; document.body.classList.add('modal-open');
+  }
+  async function saveDataForm() {
+    const d = DFORM.d; const t = (s) => String(s || '').trim(); const E = {};
+    if (!t(d.platform)) E.platform = 'Name the system the data lives in.';
+    if (!t(d.name)) E.name = 'Name the dataset.';
+    DFORM.errors = E; if (Object.keys(E).length) { renderDataForm(); const f = $('#dfield-' + Object.keys(E)[0]); if (f) f.focus(); return; }
+    if (!writeOk()) { DFORM.msg = 'This view can’t save to the live registry.'; return renderDataForm(); }
+    const slug = (s) => t(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const id = (DFORM.bp + '-' + slug(d.platform) + '-' + slug(d.name)).slice(0, 120);
+    const doc = { schema_version: 1, dataset_id: id, process: DFORM.bp, platform: t(d.platform), name: t(d.name), holds: t(d.holds), data_type: d.data_type, structure: d.structure, format: t(d.format) || platformInfo(t(d.platform)).format, owner: t(d.owner), created_at: new Date().toISOString().slice(0, 10), created_by: SRC.userId || null };
+    DFORM.saving = true; renderDataForm();
+    try {
+      await writeWithRetry(() => SRC.db.collection('datasets').doc(id).set(doc));
+      closeDataForm(); toast(doc.name + ' was added to ' + BP[doc.process].name + '.');
+      state.dataSys = doc.platform; render();
+    } catch (e) { DFORM.saving = false; DFORM.msg = e && e.code === 'invalid_argument' ? 'The registry refused the save. Your access may be view-only, or a field is too long.' : 'Couldn’t save. Check the connection and try again.'; renderDataForm(); }
+  }
+
+  /* ---------------------------------------------------------------- identity: Google Cloud Identity */
+  // People come from the Google Cloud Identity / Workspace directory (Admin SDK Directory API: primaryEmail, name,
+  // orgUnitPath, organizations[].title and department). Until the directory sync runs, these are sample records.
+  const IDENTITY = { source: 'Google Cloud Identity', domain: 'meridianbrands.example', synced: false };
+  const personEmail = (f) => f.name.toLowerCase().replace(/[^a-z ]/g, '').replace(' ', '.') + '@' + IDENTITY.domain;
+  const personOu = (f) => '/' + BP[f.bp].name + '/' + f.role;
+
+  /* ---------------------------------------------------------------- user view: who uses agents, how much */
+  // The registry records user groups per agent (process, role, head count), not people. Until per-user telemetry
+  // (Cloud Logging with the caller's identity) is joined in, people are generated from those groups as sample data:
+  // one pool per process + role, shared by every agent that lists the group, so a person is counted once.
+  // Interactions and tokens are the agent's real 30-day invocations and tokens, split across its user groups.
+  const FIRST = ['Ava', 'Noah', 'Mia', 'Liam', 'Zoe', 'Ethan', 'Isla', 'Mateo', 'Priya', 'Omar', 'Lena', 'Kai', 'Sofia', 'Jonah', 'Amara', 'Lucas', 'Nina', 'Ravi', 'Elena', 'Theo', 'Hana', 'Diego', 'Maya', 'Felix', 'Ines', 'Jamal', 'Clara', 'Arjun', 'Grace', 'Tomas', 'Leila', 'Owen', 'Yuki', 'Marco', 'Anya', 'Samir', 'Rosa', 'Ben', 'Ivy', 'Kofi', 'Julia', 'Hugo', 'Nora', 'Dev', 'Alma', 'Reza', 'Lucy', 'Emil', 'Tara', 'Victor'];
+  const LAST = ['Okafor', 'Lindqvist', 'Haddad', 'Moreau', 'Tanaka', 'Silva', 'Novak', 'Brennan', 'Iyer', 'Kowalski', 'Mensah', 'Fischer', 'Alvarez', 'Chen', 'Duarte', 'Patel', 'Rossi', 'Nguyen', 'Kaur', 'Schmidt', 'Abara', 'Larsen', 'Costa', 'Yilmaz', 'Walsh', 'Hoffman', 'Romero', 'Sato', 'Bakker', 'Osei', 'Petrov', 'Dubois', 'Marsh', 'Quinn', 'Varga', 'Ahmed', 'Keller', 'Ortiz', 'Byrne', 'Nakamura'];
+  // share of an agent's runs that a person starts or acts on, by type (estimate until telemetry carries the caller)
+  const USER_SHARE = { conversational: 1, analytical: 0.6, monitoring: 0.15, automation: 0.08 };
+  let PEOPLE = null; let PEOPLE_KEY = '';
+  function peopleModel() {
+    const key = state.lifecycle + '|' + AGENTS.length; if (PEOPLE && PEOPLE_KEY === key) return PEOPLE;
+    const pools = {};
+    AGENTS.filter(lifecycleOk).forEach((a) => a.users.forEach((g) => { if (g.n > 0) { const k = g.bp + '|' + g.role; const p = pools[k] || (pools[k] = { bp: g.bp, role: g.role, n: 0, agents: [] }); p.n = Math.max(p.n, g.n); p.agents.push({ a, n: g.n }); } }));
+    const people = [];
+    // sample names must not collide with real names already in the registry (process and agent owners)
+    const taken = new Set(BPS.map((b) => b.owner).concat(AGENTS.map((a) => a.owner)).filter(Boolean));
+    Object.keys(pools).sort().forEach((k) => {
+      const P = pools[k]; const r = rng(hash(k));
+      const folks = Array.from({ length: P.n }, (_, i) => {
+        const h = hash(k + '#' + i);
+        let name = FIRST[h % FIRST.length] + ' ' + LAST[(h >>> 7) % LAST.length]; for (let j = 1; taken.has(name) && j < 9; j++) name = FIRST[h % FIRST.length] + ' ' + LAST[((h >>> 7) + j * 11) % LAST.length];
+        return { id: 'u' + (h >>> 0).toString(36), name, bp: P.bp, role: P.role, w: Math.pow(0.6 + r() * 2.4, 2.2), uses: {}, inter: 0, tin: 0, tout: 0, cost: 0, last: 0 };
+      });
+      P.agents.forEach(({ a, n }) => {
+        if (!hasTel(a)) return; const c = calc(a); const u = a.use;
+        const tot = a.users.reduce((x, g) => x + g.n, 0) || 1;
+        const inter = u.inv * (USER_SHARE[a.arch] || 0.1) * (n / tot);
+        const who = folks.slice(0, n); const ws = who.reduce((x, f) => x + f.w, 0) || 1;
+        const perInv = u.inv ? 1 / u.inv : 0;
+        who.forEach((f, i) => {
+          const v = inter * (f.w / ws); if (v < 0.5) return;
+          const tin = c.tokIn * perInv * v, tout = c.tokOut * perInv * v;
+          f.uses[a.id] = { inter: v, tin, tout, cost: c.total * perInv * v };
+          f.inter += v; f.tin += tin; f.tout += tout; f.cost += c.total * perInv * v;
+          f.last = Math.max(f.last, DAYS.length - 1 - (hash(f.id + a.id) % Math.max(1, Math.round(6 / (1 + v / 40)))));
+        });
+      });
+      folks.forEach((f) => { if (f.inter >= 0.5) people.push(f); });
+    });
+    people.sort((x, y) => y.inter - x.inter);
+    PEOPLE = people; PEOPLE_KEY = key; return people;
+  }
+  function personSeries(f) {
+    // daily interactions: the person's share of each agent's daily requests
+    return DAYS.map((_, i) => Object.keys(f.uses).reduce((x, id) => { const c = calc(AG[id]); return x + (c.req30 ? (c.series[i] || 0) / c.req30 * f.uses[id].inter : 0); }, 0));
+  }
+
+  function userSection(b, toggle) {
+    const all = peopleModel();
+    const scopeBu = state.uScope !== 'all';
+    // in a unit: people who use at least one agent homed here, counting only those agents
+    const rows = (scopeBu ? all.map((f) => { const ids = Object.keys(f.uses).filter((id) => AG[id].home === b.id); if (!ids.length) return null; const pick = (k) => ids.reduce((x, id) => x + f.uses[id][k], 0); return { f, ids, inter: pick('inter'), tin: pick('tin'), tout: pick('tout'), cost: pick('cost') }; }).filter(Boolean)
+      : all.map((f) => ({ f, ids: Object.keys(f.uses), inter: f.inter, tin: f.tin, tout: f.tout, cost: f.cost }))).sort((x, y) => y.inter - x.inter);
+    const q = state.uq.trim().toLowerCase();
+    const shown = rows.filter((r) => !q || (r.f.name + ' ' + r.f.role + ' ' + BP[r.f.bp].name + ' ' + BP[r.f.bp].code).toLowerCase().includes(q));
+    const sum = (k) => rows.reduce((x, r) => x + r[k], 0);
+    const inter = sum('inter'), tok = sum('tin') + sum('tout');
+    const top = rows.slice(0, Math.max(1, Math.ceil(rows.length * 0.1))).reduce((x, r) => x + r.inter, 0);
+    const topShare = inter ? Math.round((top / inter) * 100) : 0;
+    const byRole = {}; rows.forEach((r) => { const k = r.f.role + '|' + r.f.bp; (byRole[k] = byRole[k] || { role: r.f.role, bp: r.f.bp, n: 0, v: 0 }); byRole[k].n++; byRole[k].v += r.inter; });
+    const roles = Object.values(byRole).sort((x, y) => y.v - x.v).slice(0, 8); const maxR = Math.max(1, ...roles.map((x) => x.v));
+    const byBu = {}; rows.forEach((r) => { byBu[r.f.bp] = (byBu[r.f.bp] || 0) + r.inter; });
+    const fromOther = scopeBu ? rows.filter((r) => r.f.bp !== b.id).length : 0;
+    const lead = rows.length ? (scopeBu ? nf.format(rows.length) + ' people used ' + b.name + ' agents in the last 30 days' + (fromOther ? ', ' + nf.format(fromOther) + ' of them from other units' : '') : nf.format(rows.length) + ' people across the enterprise used an agent in the last 30 days') +
+      ', about ' + nf.format(roundTo(inter)) + ' interactions and ' + compact(tok) + ' tokens. The busiest tenth of them account for ' + topShare + '% of interactions.' : 'Nobody has used these agents in the last 30 days.';
+
+    let h = '<section class="sec" aria-labelledby="sec-agents"><div class="sec-h"><h2 id="sec-agents">' + (scopeBu ? 'People using ' + esc(b.name) + ' agents' : 'People using agents, enterprise-wide') + ' <span class="count">' + nf.format(rows.length) + '</span></h2>' + toggle + '</div>' +
+      '<div class="toolbar trow"><label class="search-in">' + icon('search') + '<span class="sr">Filter people</span><input id="uq" type="search" placeholder="Filter by name, role or unit" value="' + esc(state.uq) + '"></label>' +
+      '<div class="seg sm" role="group" aria-label="Scope">' + [['bu', 'This unit’s agents'], ['all', 'All agents']].map(([k, l]) => '<button type="button" class="seg-btn' + ((scopeBu ? 'bu' : 'all') === k ? ' on' : '') + '" data-uscope="' + k + '" aria-pressed="' + ((scopeBu ? 'bu' : 'all') === k) + '">' + l + '</button>').join('') + '</div></div>';
+    h += '<p class="lead ulead">' + esc(lead) + '</p>';
+    h += '<p class="sec-sub">People come from ' + IDENTITY.source + '. ' + (IDENTITY.synced ? '' : 'Until the directory sync runs these are sample people generated from each agent\u2019s registered user groups, with the agent\u2019s real 30-day interactions and tokens split across them. ') + 'Per-person figures become exact once Cloud Logging records who called each agent.</p>';
+    if (!rows.length) return h + '</section>';
+    h += '<div class="ustats">' +
+      '<div><b>' + nf.format(rows.length) + '</b><span>people</span></div>' +
+      '<div><b>' + compact(inter) + '</b><span>interactions, 30 days</span></div>' +
+      '<div><b>' + compact(tok) + '</b><span>tokens, 30 days</span></div>' +
+      '<div><b>' + nf.format(Math.round(inter / rows.length)) + '</b><span>interactions per person</span></div>' +
+      '<div><b>' + topShare + '%</b><span>of interactions from the top 10%</span></div></div>';
+    h += '<div class="two ucharts"><div><h3 class="h3">Most active roles</h3><ul class="ubars-r">' + roles.map((x) => '<li><span class="ur-l">' + esc(x.role) + ' <span class="muted">' + esc(BP[x.bp].code) + ', ' + x.n + '</span></span><span class="ub-t"><i style="width:' + Math.max(1, (x.v / maxR) * 100).toFixed(1) + '%"></i></span><span class="ub-v">' + compact(x.v) + '</span></li>').join('') + '</ul></div>' +
+      '<div><h3 class="h3">' + (scopeBu ? 'Where these people sit' : 'Interactions by unit') + '</h3><ul class="ubars-r">' + Object.entries(byBu).sort((x, y) => y[1] - x[1]).slice(0, 8).map(([id, v], i, arr) => '<li><span class="ur-l">' + chip(id) + ' ' + esc(BP[id].name) + '</span><span class="ub-t"><i style="width:' + Math.max(1, (v / arr[0][1]) * 100).toFixed(1) + '%"></i></span><span class="ub-v">' + compact(v) + '</span></li>').join('') + '</ul></div></div>';
+    const lim = state.uLimit;
+    h += '<div class="tbl-wrap"><table class="tbl utbl"><thead><tr><th class="num">#</th><th>Person</th><th>Role</th><th>Unit</th><th class="num">Agents</th><th class="num">Interactions, 30d</th><th class="num">Tokens, 30d</th><th>Last active</th></tr></thead><tbody>' +
+      shown.slice(0, lim).map((r) => { const on = state.uSel === r.f.id; const rank = rows.indexOf(r) + 1;
+        let row = '<tr class="click' + (on ? ' on' : '') + '" data-user="' + r.f.id + '" tabindex="0" aria-expanded="' + on + '"><td class="num muted">' + rank + '</td><td><span class="uav">' + esc(r.f.name.split(' ').map((x) => x[0]).join('')) + '</span><b>' + esc(r.f.name) + '</b><span class="uem">' + esc(personEmail(r.f)) + '</span></td><td>' + esc(r.f.role) + '</td><td>' + chip(r.f.bp) + '</td><td class="num">' + r.ids.length + '</td><td class="num">' + nf.format(Math.round(r.inter)) + '</td><td class="num">' + compact(r.tin + r.tout) + '</td><td>' + esc(DAYS[r.f.last] ? DAYS[r.f.last].toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '–') + '</td></tr>';
+        if (on) row += '<tr class="udet"><td colspan="8">' + userDetail(r) + '</td></tr>';
+        return row; }).join('') + '</tbody></table></div>';
+    if (shown.length > lim) h += '<div class="umore"><button type="button" class="btn" data-umore>Show 50 more</button><span class="muted">Showing ' + lim + ' of ' + nf.format(shown.length) + '</span></div>';
+    else if (!shown.length) h += '<div class="empty">Nobody matches that filter.</div>';
+    return h + '</section>';
+  }
+  function userDetail(r) {
+    const f = r.f; const ser = personSeries(f); const mx = Math.max(1, ...ser); const W = 320, H = 48;
+    const pts = ser.map((v, i) => (i / (ser.length - 1) * W).toFixed(1) + ',' + (H - 4 - (v / mx) * (H - 10)).toFixed(1)).join(' ');
+    const ids = r.ids.slice().sort((x, y) => f.uses[y].inter - f.uses[x].inter);
+    return '<div class="ud"><div class="ud-h"><div><b>' + esc(f.name) + '</b><span class="muted">' + esc(f.role) + ', ' + esc(BP[f.bp].name) + '</span><span class="uid">' + esc(personEmail(f)) + ' / ' + esc(personOu(f)) + ' / ' + esc(IDENTITY.source) + (IDENTITY.synced ? '' : ' (sample)') + '</span></div>' +
+      '<div class="ud-k"><span><b>' + nf.format(Math.round(r.inter)) + '</b> interactions</span><span><b>' + compact(r.tin) + '</b> tokens in</span><span><b>' + compact(r.tout) + '</b> tokens out</span><span><b>' + money(r.cost, 2) + '</b> est. cost</span></div>' +
+      '<svg class="ud-sp" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-label="Daily interactions, last 30 days"><polyline points="' + pts + '"/></svg></div>' +
+      '<table class="tbl ud-t"><thead><tr><th>Agent</th><th>Type</th><th class="num">Interactions</th><th class="num">Tokens in</th><th class="num">Tokens out</th><th class="num">Est. cost</th><th>Share</th></tr></thead><tbody>' +
+      ids.map((id) => { const a = AG[id], u = f.uses[id]; return '<tr><td><button type="button" class="ud-a" data-agent="' + esc(id) + '">' + esc(a.name) + '</button> ' + chip(a.home) + '</td><td>' + esc(ARCH[a.arch].label) + '</td><td class="num">' + nf.format(Math.round(u.inter)) + '</td><td class="num">' + compact(u.tin) + '</td><td class="num">' + compact(u.tout) + '</td><td class="num">' + money(u.cost, 2) + '</td><td><span class="ub-t"><i style="width:' + ((u.inter / r.inter) * 100).toFixed(1) + '%"></i></span></td></tr>'; }).join('') +
+      '</tbody></table><p class="dnote">Costs use illustrative list prices. Sample person; figures are this person’s estimated share of each agent’s real usage.</p></div>';
   }
 
   function renderBP() {
@@ -594,15 +768,16 @@
           '<button type="button" class="seg-btn' + ((state.step || '') === k ? ' on' : '') + (n ? '' : ' none') + '" data-step="' + esc(k) + '" aria-pressed="' + ((state.step || '') === k) + '">' + esc(l) + ' <span class="seg-n">' + n + '</span></button>').join('') + '</div></div>' +
       spark + '</header>';
 
-    const viewToggle = '<div class="seg sm vtoggle" role="group" aria-label="View">' + [['agents', 'Agent view'], ['data', 'Data view']].map(([k, l]) => '<button type="button" class="seg-btn' + (state.bpView === k ? ' on' : '') + '" data-bpview="' + k + '" aria-pressed="' + (state.bpView === k) + '">' + icon(k === 'agents' ? 'automation' : 'data') + l + '</button>').join('') + '</div>';
+    const viewToggle = '<div class="seg sm vtoggle" role="group" aria-label="View">' + [['agents', 'Agent view'], ['data', 'Data view'], ['users', 'User view']].map(([k, l]) => '<button type="button" class="seg-btn' + (state.bpView === k ? ' on' : '') + '" data-bpview="' + k + '" aria-pressed="' + (state.bpView === k) + '">' + icon(k === 'agents' ? 'automation' : k) + l + '</button>').join('') + '</div>';
     if (state.bpView === 'data') h += dataSection(b, viewToggle);
+    else if (state.bpView === 'users') h += userSection(b, viewToggle);
     else {
-    h += '<section class="sec" aria-labelledby="sec-agents"><div class="sec-h"><h2 id="sec-agents">' + (state.step ? esc(state.step) + ' agents in ' : 'Agents in ') + esc(b.name) + ' <span class="count">' + list.length + '</span>' + addBtn(b.id) + '</h2>' +
-      '<div class="toolbar">' +
+    h += '<section class="sec" aria-labelledby="sec-agents"><div class="sec-h"><h2 id="sec-agents">' + (state.step ? esc(state.step) + ' agents in ' : 'Agents in ') + esc(b.name) + ' <span class="count">' + list.length + '</span>' + addBtn(b.id) + '</h2>' + viewToggle + '</div>' +
+      '<div class="toolbar trow">' +
       '<label class="search-in">' + icon('search') + '<span class="sr">Filter agents</span><input id="q" type="search" placeholder="Filter by name, system or tool" value="' + esc(state.q) + '"></label>' +
       '<label class="sel"><span class="sr">Sort by</span><select id="sort">' + [['req', 'Most API requests'], ['users', 'Most users'], ['cost', 'Highest spend'], ['cross', 'Most processes reached'], ['name', 'Name']].map(([k, l]) => '<option value="' + k + '"' + (state.sort === k ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>' +
       '<div class="seg sm" role="group" aria-label="Tile density"><button type="button" class="seg-btn' + (state.density === 'comfortable' ? ' on' : '') + '" data-density="comfortable">Comfortable</button><button type="button" class="seg-btn' + (state.density === 'compact' ? ' on' : '') + '" data-density="compact">Compact</button></div>' +
-      viewToggle + '</div></div>';
+      '</div>';
     h += '<div class="filters">' + '<div class="seg sm" role="group" aria-label="Agent type">' + ['all', 'conversational', 'automation', 'analytical', 'monitoring'].map((k) =>
         '<button type="button" class="seg-btn' + (state.arch === k ? ' on' : '') + '" data-arch="' + k + '" aria-pressed="' + (state.arch === k) + '">' + (k === 'all' ? 'All types' : icon(k) + ARCH[k].label.replace('Process automation', 'Automation')) + ' <span class="seg-n">' + (k === 'all' ? stepAll.length : (archCounts[k] || 0)) + '</span></button>').join('') + '</div>';
     h += '<details class="legend"><summary>' + icon('info') + 'How agents are classified</summary><div class="legend-body">' +
@@ -615,6 +790,8 @@
     h += '</section>';
     }
 
+    // cross-process agents belong to the agent view only
+    if (state.bpView === 'agents') {
     const xs = state.crossTab === 'in' ? sortAgents(inbound) : sortAgents(outbound);
     h += '<section class="sec" aria-labelledby="sec-cross"><div class="sec-h"><h2 id="sec-cross">Cross-process agents</h2>' +
       '<div class="seg" role="group" aria-label="Direction"><button type="button" class="seg-btn' + (state.crossTab === 'in' ? ' on' : '') + '" data-cross="in">From other processes into ' + esc(b.code) + ' <span class="seg-n">' + inbound.length + '</span></button><button type="button" class="seg-btn' + (state.crossTab === 'out' ? ' on' : '') + '" data-cross="out">' + esc(b.code) + ' agents reaching out <span class="seg-n">' + outbound.length + '</span></button></div></div>' +
@@ -623,6 +800,7 @@
         : 'Agents homed in ' + esc(b.name) + ' whose inputs, tools or outputs touch other processes.') + '</p>';
     h += xs.length ? '<div class="xlist">' + xs.map((a) => crossRow(a, b.id, state.crossTab)).join('') + '</div>' : '<div class="empty">None for the current lifecycle filter.</div>';
     h += '</section>';
+    }
     $('#main').innerHTML = h;
     // steps row: fade the right edge while more steps are hidden, and keep the selected step in view
     const row = $('#main .bp-head .subs');
@@ -1299,6 +1477,24 @@
         '<ul>' + l.checks.map(([t, v, of]) => '<li class="' + (of && v === of ? 'ok' : 'gap') + '">' + icon(of && v === of ? 'check' : 'info', 'mini') + '<span>' + esc(t) + '</span><b>' + v + ' / ' + of + '</b></li>').join('') + '</ul>' +
         '<button type="button" class="hx-btn ' + (i === 0 ? 'lime' : 'ghost') + ' wide" data-life="' + l.st + '">Show ' + esc(STATUS[l.st].toLowerCase()) + ' agents</button></div>').join('') + '</div></section>';
 
+    // ---- people: who uses AI the most (opens the user view for detail)
+    const ppl = peopleModel(); const pInter = ppl.reduce((x, f) => x + f.inter, 0);
+    if (ppl.length) {
+      const topN = ppl.slice(0, 8); const pmax = topN[0].inter;
+      const tenth = ppl.slice(0, Math.max(1, Math.ceil(ppl.length * 0.1))).reduce((x, f) => x + f.inter, 0);
+      const roleAgg = {}; ppl.forEach((f) => { const k = f.role + '|' + f.bp; roleAgg[k] = roleAgg[k] || { role: f.role, bp: f.bp, n: 0, v: 0 }; roleAgg[k].n++; roleAgg[k].v += f.inter; });
+      const topRole = Object.values(roleAgg).sort((x, y) => y.v - x.v)[0];
+      const multi = ppl.filter((f) => Object.keys(f.uses).length > 1).length;
+      h += '<section class="hx-sec" id="hx-people">' + hxHead('people', 'Who uses AI ', 'the most', '.', 'People ranked by interactions with agents over 30 days, from ' + IDENTITY.source + (IDENTITY.synced ? '' : ' (sample people until the directory sync runs)') + '. Select a person to see their agents, interactions and tokens.') +
+        '<div class="hx-stats rv">' +
+          '<div class="hx-stat"><span class="hx-ml">people</span><span class="hx-big">' + hxNum(ppl.length, 'int') + '</span><span class="hx-ml">used an agent in 30 days</span><span class="hx-tag">' + nf.format(multi) + ' use more than one</span></div>' +
+          '<div class="hx-stat"><span class="hx-ml">concentration</span><span class="hx-big">' + hxNum(pInter ? (tenth / pInter) * 100 : 0, 'pct') + '</span><span class="hx-ml">of interactions come from the busiest 10%</span><div class="hx-track"><i style="--w:' + (pInter ? (tenth / pInter) * 100 : 0).toFixed(1) + '%"></i></div></div>' +
+          '<div class="hx-stat"><span class="hx-ml">most active role</span><span class="hx-big hx-big-s">' + esc(topRole.role) + '</span><span class="hx-ml">' + esc(BP[topRole.bp].name.toLowerCase()) + ', ' + topRole.n + ' people, ' + compact(topRole.v) + ' interactions</span></div></div>' +
+        '<div class="hx-card hx-rows rv"><div class="hx-card-h"><span class="hx-mono">top ' + topN.length + ' by interactions, 30 days</span><button type="button" class="hx-btn ghost sm" data-huser="|' + esc(topN[0].bp) + '">See everyone</button></div>' +
+        topN.map((f, i) => '<button type="button" class="hx-prow" data-huser="' + esc(f.id) + '|' + esc(f.bp) + '"><span class="hx-prk">' + (i + 1) + '</span><span class="uav">' + esc(f.name.split(' ').map((x) => x[0]).join('')) + '</span><span class="hx-row-n"><b>' + esc(f.name) + '</b><span>' + esc(f.role) + '</span></span>' + chip(f.bp) +
+          '<span class="hx-pbar"><i style="width:' + ((f.inter / pmax) * 100).toFixed(1) + '%"></i></span><span class="hx-pv"><b>' + nf.format(Math.round(f.inter)) + '</b> interactions</span><span class="hx-pv">' + compact(f.tin + f.tout) + ' tokens</span></button>').join('') + '</div></section>';
+    }
+
     // ---- close: where next + status strip
     const worry = BPS.map((b) => ({ b, v: list.filter((a) => a.home !== b.id && calc(a).touch[b.id] && calc(a).touch[b.id].write).length + M.per[b.id].agents.filter((a) => a.health !== 'healthy' && a.health !== 'unknown').length * 3 })).sort((x, y) => y.v - x.v).slice(0, 6);
     h += '<section class="hx-sec hx-close"><div class="hx-closing"><div class="hx-card hx-brand rv"><span class="brand-mark big" aria-hidden="true">' + hxMark() + '</span><p>Agent governance for ' + esc(TENANT.name || 'the enterprise') + '. Visibility only: the console runs nothing and approves nothing.</p><span class="hx-mono dim">gcp first / vertex ai agent engine / adk</span></div>' +
@@ -1585,13 +1781,14 @@
 
   /* ---------------------------------------------------------------- render */
   function render() {
-    const ae = document.activeElement; const keepId = ae && (ae.id === 'q' || ae.id === 'dq') ? ae.id : null; const keepQ = keepId ? ae.selectionStart : null;
+    const ae = document.activeElement; const keepId = ae && (ae.id === 'q' || ae.id === 'dq' || ae.id === 'uq') ? ae.id : null; const keepQ = keepId ? ae.selectionStart : null;
     renderTop();
     if (!SRC.ready) { $('#nav').innerHTML = ''; $('#main').innerHTML = loadingView(); return; }
     if (SRC.empty) { $('#nav').innerHTML = ''; $('#main').innerHTML = bannerHtml() + emptyView(); return; }
     renderNav();
     if (state.view === 'all') renderAll(); else { if (STACK) { STACK.stop(); STACK = null; } renderBP(); }
     const pageKey = state.view === 'all' ? 'all' : state.bp; if (state._page !== pageKey) { state._page = pageKey; $('#main').scrollTop = 0; }
+    if (state._scrollUser && state.view === 'bp') { const k = state._scrollUser; state._scrollUser = null; const el = k === 'top' ? $('#sec-agents') : document.querySelector('tr[data-user="' + k + '"]'); if (el) { el.scrollIntoView({ block: k === 'top' ? 'start' : 'center' }); if (k !== 'top') el.focus({ preventScroll: true }); } }
     $('#main').insertAdjacentHTML('afterbegin', bannerHtml());
     renderModal(); paintSprites(); resolveNames();
     $('.app').classList.toggle('home', state.view === 'all');
@@ -1941,7 +2138,7 @@
   document.addEventListener('click', (e) => {
     document.querySelectorAll('details.hinfo[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
     if (e.target.closest('#form')) return;
-    const t = e.target.closest('[data-go],[data-agent],[data-life],[data-arch],[data-step],[data-hlayer],[data-hdraft],[data-hlive],[data-theme-set],[data-bpview],[data-dsys],[data-dstruct],[data-hscroll],[data-density],[data-cross],[data-tab],[data-collapse],[data-add],[data-edit],#m-close,#copy-md');
+    const t = e.target.closest('[data-go],[data-agent],[data-life],[data-arch],[data-step],[data-hlayer],[data-hdraft],[data-hlive],[data-theme-set],[data-bpview],[data-dsys],[data-dstruct],[data-uscope],[data-user],[data-umore],[data-huser],[data-adddata],#df-close,#df-cancel,#df-save,[data-hscroll],[data-density],[data-cross],[data-tab],[data-collapse],[data-add],[data-edit],#m-close,#copy-md');
     if (!t) { if (!e.target.closest('.gs')) $('#gs-results').hidden = true; if (e.target.id === 'modal') closeModal(); return; }
     if (t.disabled) return;
     if (t.id === 'm-close') return closeModal();
@@ -1958,6 +2155,18 @@
     if (t.dataset.arch) { state.arch = t.dataset.arch; return render(); }
     if (t.dataset.hscroll) { e.preventDefault(); const tg = document.getElementById(t.dataset.hscroll); if (tg) tg.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); return; }
     if (t.dataset.bpview) { state.bpView = t.dataset.bpview; savePrefs(); return render(); }
+    if (t.id === 'df-close' || t.id === 'df-cancel') return closeDataForm();
+    if (t.id === 'df-save') return saveDataForm();
+    if (t.dataset.adddata !== undefined) return openDataForm(t.dataset.adddata);
+    if (t.dataset.huser) {
+      // from the home page: open the user view, enterprise-wide, with this person expanded (or just the list)
+      const [id, bp] = t.dataset.huser.split('|'); const rank = id ? peopleModel().findIndex((f) => f.id === id) + 1 : 0;
+      Object.assign(state, { view: 'bp', bpView: 'users', uScope: 'all', uSel: id || null, uq: '', uLimit: Math.max(50, Math.ceil(rank / 50) * 50), _keepUser: true, _scrollUser: id || 'top' });
+      savePrefs(); return go(bp);
+    }
+    if (t.dataset.uscope) { state.uScope = t.dataset.uscope; state.uSel = null; state.uLimit = 50; return render(); }
+    if (t.dataset.umore !== undefined) { state.uLimit += 50; return render(); }
+    if (t.dataset.user) { const k = t.dataset.user; state.uSel = state.uSel === k ? null : k; render(); const r = document.querySelector('tr[data-user="' + k + '"]'); if (r) r.focus(); return; }
     if (t.dataset.dstruct) { state.dStruct = t.dataset.dstruct; return render(); }
     if (t.dataset.dsys) {
       const k = t.dataset.dsys; state.dataSys = state.dataSys === k ? null : k; render();
@@ -1986,15 +2195,17 @@
   });
   function closeModal() { state.agent = null; hideTT(); const f = state._lastFocus; go(state.view === 'all' ? 'all' : state.bp); if (f && document.body.contains(f)) f.focus(); }
   document.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr[data-user]')) { e.preventDefault(); e.target.click(); return; }
     if (e.key === 'Escape') {
       const hi = document.querySelector('details.hinfo[open]'); if (hi) { hi.open = false; hi.querySelector('summary').focus(); return; }
+      if (DFORM.open) { closeDataForm(); return; }
       if (FORM.open) { if (FORM.confirm) { FORM.confirm = false; renderFoot(); } else closeForm(); return; }
       if (!$('#gs-results').hidden) { $('#gs-results').hidden = true; return; }
       if (state.agent) closeModal();
     }
     if (e.key === 'Tab') {
       // keep keyboard focus inside the open dialog (form first, then the agent detail)
-      const dlg = FORM.open ? $('#form') : state.agent ? $('#modal') : null;
+      const dlg = DFORM.open ? $('#dform') : FORM.open ? $('#form') : state.agent ? $('#modal') : null;
       if (dlg && !dlg.hidden) {
         const f = [...dlg.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter((n) => n.offsetParent !== null);
         if (f.length) {
@@ -2014,6 +2225,9 @@
     if (e.target.closest('#form')) return;
     if (e.target.id === 'q') { state.q = e.target.value; render(); }
     if (e.target.id === 'dq') { state.dq = e.target.value; render(); }
+    if (e.target.dataset && e.target.dataset.dk && DFORM.open) { const dk = e.target.dataset.dk; DFORM.d[dk] = e.target.value;
+      if (DFORM.errors[dk] && String(e.target.value).trim()) { delete DFORM.errors[dk]; const w = e.target.closest('.fld'); if (w) { w.classList.remove('has-err'); const er = w.querySelector('.err'); if (er) er.remove(); } e.target.removeAttribute('aria-invalid'); } if (e.target.dataset.dk === 'data_type') { renderDataForm(); const n = $('#dfield-data_type'); if (n) n.focus(); } return; }
+    if (e.target.id === 'uq') { state.uq = e.target.value; state.uLimit = 50; render(); }
     if (e.target.id === 'gs') renderSearch(e.target.value.trim());
   });
   document.addEventListener('change', (e) => { if (e.target.id === 'sort') { state.sort = e.target.value; render(); } });
@@ -2080,6 +2294,7 @@
       db.collection('processes').onSnapshot((q) => { SRC.raw.processes = rows(q); if (!q.metadata.fromCache) SRC.fresh.processes = true; changed(); }, fail);
       db.collection('agents').onSnapshot((q) => { SRC.raw.agents = rows(q).map((d) => Object.assign({}, d, { agent_id: d.agent_id || d.id })); changed(); }, fail);
       db.collection('usage').onSnapshot((q) => { SRC.raw.usage = rows(q).map((d) => Object.assign({}, d, { agent_id: d.agent_id || d.id })); changed(); }, fail);
+      db.collection('datasets').onSnapshot((q) => { SRC.raw.datasets = rows(q); if (SRC.ready) render(); }, () => { SRC.raw.datasets = []; });
     } catch (e) { clearTimeout(timer); useSnapshot('subscribe-failed'); }
   }
 

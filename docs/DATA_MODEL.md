@@ -93,3 +93,30 @@ Each `inputs[]` and `outputs[]` row may carry three optional fields. The process
 | `format` | free text | `"EDI X12 850"`, `"PDF"`, `"Columnar tables"` |
 
 The dataset name is the part of `system` / `destination` after " · " (for example "SAP S/4HANA · Billing documents" is the dataset "Billing documents" in the platform "SAP S/4HANA"). Rows without that part are grouped under the platform. The data itself is never read or shown.
+
+
+## datasets/{dataset_id} (2026-11-23)
+
+Data sources registered from the Data view ("Add data"). Describes data; never holds it.
+
+| field | example |
+|---|---|
+| dataset_id | `o2c-snowflake-customer-360-view` (process + system + dataset, slugged) |
+| process | `o2c` |
+| platform | `Snowflake` |
+| name | `Customer 360 view` |
+| holds | `Unified customer profile with order history` |
+| data_type / structure / format | `Master data` / `Structured` / `Columnar tables` |
+| owner | `Customer data team` |
+| created_at, created_by | `2026-11-23`, console user id |
+
+Registered datasets join the agent-derived catalog in the Data view and are marked "Registered". Optional: the console works without this collection.
+
+## People: Google Cloud Identity (planned)
+
+The User view's identity source is Google Cloud Identity / Google Workspace (Microsoft Entra later). Planned collections, fed by a sync job:
+
+- `people/{primaryEmail}`: name, primaryEmail, orgUnitPath, organizations[].title and department, from the Admin SDK Directory API.
+- `people_usage/{primaryEmail}`: per agent, 30-day interactions, tokens in and out, last active, from Cloud Logging / Agent Engine traces (the caller principal) joined on the `agent_id` label.
+
+Until then the console generates sample people from each agent's user groups (`peopleModel()` in `app.js`, labelled "sample" in the UI, emails on the reserved `meridianbrands.example` domain). Replace `peopleModel()` with a reader of these two collections.
